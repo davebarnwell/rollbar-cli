@@ -21,10 +21,12 @@ var (
 	itemsOutput      string
 	itemsJSON        bool
 
-	itemsGetID     int64
-	itemsGetUUID   string
-	itemsGetOutput string
-	itemsGetJSON   bool
+	itemsGetID            int64
+	itemsGetUUID          string
+	itemsGetOutput        string
+	itemsGetJSON          bool
+	itemsGetWithInstances bool
+	itemsGetInstancesPage int
 
 	itemsUpdateID                     int64
 	itemsUpdateUUID                   string
@@ -110,6 +112,10 @@ var itemsGetCmd = &cobra.Command{
 		}
 
 		client := newRollbarClient()
+		identifier := uuid
+		if identifier == "" {
+			identifier = strconv.FormatInt(id, 10)
+		}
 
 		var resp *rollbar.GetItemResponse
 		if uuid != "" {
@@ -121,8 +127,30 @@ var itemsGetCmd = &cobra.Command{
 			return err
 		}
 
+		var instancesResp *rollbar.ListItemInstancesResponse
+		if itemsGetWithInstances {
+			instancesIdentifier := identifier
+			if resp.Item.ID > 0 {
+				instancesIdentifier = strconv.FormatInt(resp.Item.ID, 10)
+			}
+			instancesResp, err = client.ListItemInstances(cmd.Context(), instancesIdentifier, itemsGetInstancesPage)
+			if err != nil {
+				return err
+			}
+		}
+
 		if itemsGetOutput == "json" {
-			return writeJSON(resp.Raw)
+			if !itemsGetWithInstances {
+				return writeJSON(resp.Raw)
+			}
+			return writeJSON(map[string]any{
+				"item":      resp.Raw,
+				"instances": instancesResp.Raw,
+			})
+		}
+
+		if itemsGetWithInstances {
+			return ui.RenderItemWithInstances(resp.Item, instancesResp.Instances)
 		}
 
 		return ui.RenderItem(resp.Item)
@@ -348,6 +376,8 @@ func init() {
 	itemsGetCmd.Flags().StringVar(&itemsGetUUID, "uuid", "", "Occurrence UUID")
 	itemsGetCmd.Flags().StringVarP(&itemsGetOutput, "output", "o", "text", "Output format: text|json")
 	itemsGetCmd.Flags().BoolVar(&itemsGetJSON, "json", false, "Shortcut for --output json")
+	itemsGetCmd.Flags().BoolVar(&itemsGetWithInstances, "instances", false, "Include item instances (stack frames, file/line, payload)")
+	itemsGetCmd.Flags().IntVar(&itemsGetInstancesPage, "instances-page", 1, "Instances page to fetch when --instances is set")
 
 	itemsUpdateCmd.Flags().Int64Var(&itemsUpdateID, "id", 0, "Item ID")
 	itemsUpdateCmd.Flags().StringVar(&itemsUpdateUUID, "uuid", "", "Occurrence UUID (resolved to item id before update)")

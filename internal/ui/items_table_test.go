@@ -77,6 +77,39 @@ func TestRenderItem(t *testing.T) {
 	}
 }
 
+func TestRenderItemWithInstances(t *testing.T) {
+	out := captureStdout(t, func() {
+		_ = RenderItemWithInstances(
+			rollbar.Item{ID: 77, Counter: 1, Title: "oops"},
+			[]rollbar.ItemInstance{
+				{
+					ID:          88,
+					UUID:        "instance-uuid",
+					Level:       "error",
+					Environment: "production",
+					Timestamp:   1700000000,
+					StackFrames: []rollbar.StackFrame{
+						{Filename: "app/main.go", Line: 42, Method: "handler"},
+					},
+					Payload: map[string]any{
+						"request": map[string]any{"url": "https://example.com/checkout"},
+					},
+				},
+			},
+		)
+	})
+
+	if !strings.Contains(out, "Instances: 1") {
+		t.Fatalf("missing instances count: %q", out)
+	}
+	if !strings.Contains(out, "app/main.go:42 (handler)") {
+		t.Fatalf("missing stack frame file/line: %q", out)
+	}
+	if !strings.Contains(out, "\"request\"") || !strings.Contains(out, "https://example.com/checkout") {
+		t.Fatalf("missing payload details: %q", out)
+	}
+}
+
 func TestHelpers(t *testing.T) {
 	if got := formatUnix(0); got != "-" {
 		t.Fatalf("formatUnix(0) = %q, want -", got)

@@ -149,6 +149,56 @@ func TestGetItemByIDAndUUID(t *testing.T) {
 	}
 }
 
+func TestListItemInstances(t *testing.T) {
+	var gotPath string
+	var gotQuery url.Values
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte(`{"err":0,"result":{"instances":[{"id":501,"uuid":"inst-1","timestamp":1700001000,"level":"error","environment":"production","body":{"trace":{"frames":[{"filename":"app/main.go","lineno":42,"method":"handler"}]}},"request":{"url":"https://example.com/checkout"},"custom":{"order_id":"ord_123"}}]}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListItemInstances(context.Background(), "42", 2)
+	if err != nil {
+		t.Fatalf("unexpected list instances error: %v", err)
+	}
+
+	if gotPath != "/api/1/item/42/instances" {
+		t.Fatalf("unexpected instances path: %s", gotPath)
+	}
+	if gotQuery.Get("page") != "2" {
+		t.Fatalf("unexpected instances query: %#v", gotQuery)
+	}
+	if len(resp.Instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(resp.Instances))
+	}
+
+	instance := resp.Instances[0]
+	if instance.ID != 501 || instance.UUID != "inst-1" || instance.Timestamp != 1700001000 {
+		t.Fatalf("unexpected instance IDs: %#v", instance)
+	}
+	if len(instance.StackFrames) != 1 {
+		t.Fatalf("expected one stack frame, got %#v", instance.StackFrames)
+	}
+	frame := instance.StackFrames[0]
+	if frame.Filename != "app/main.go" || frame.Line != 42 || frame.Method != "handler" {
+		t.Fatalf("unexpected frame details: %#v", frame)
+	}
+	if instance.Payload == nil || instance.Payload["request"] == nil || instance.Payload["custom"] == nil {
+		t.Fatalf("expected payload details, got %#v", instance.Payload)
+	}
+}
+
+func TestListItemInstancesValidation(t *testing.T) {
+	client := NewClient(Config{AccessToken: "tok", BaseURL: "https://api.rollbar.com"})
+	if _, err := client.ListItemInstances(context.Background(), "  ", 1); err == nil {
+		t.Fatalf("expected empty identifier error")
+	}
+}
+
 func TestUpdateItemByID(t *testing.T) {
 	var gotMethod string
 	var gotPath string

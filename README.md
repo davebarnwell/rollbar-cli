@@ -68,6 +68,12 @@ Provide a Rollbar project token with `read` scope:
 # get item JSON
 ./rollbar-cli items get --id 275123456 --json
 
+# get item + instance details (stack frames, file/line, payload)
+./rollbar-cli items get --id 275123456 --instances
+
+# get item + instances JSON payloads
+./rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --json
+
 # update status + resolved version
 ./rollbar-cli items update --id 275123456 --status resolved --resolved-in-version aabbcc1
 

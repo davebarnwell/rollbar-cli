@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -40,6 +42,13 @@ func RenderItem(item rollbar.Item) error {
 	return nil
 }
 
+func RenderItemWithInstances(item rollbar.Item, instances []rollbar.ItemInstance) error {
+	if err := renderItem(os.Stdout, item); err != nil {
+		return err
+	}
+	return renderItemInstances(os.Stdout, instances)
+}
+
 func renderItem(w io.Writer, item rollbar.Item) error {
 	if _, err := fmt.Fprintf(w, "ID: %d\n", item.ID); err != nil {
 		return err
@@ -65,6 +74,72 @@ func renderItem(w io.Writer, item rollbar.Item) error {
 	if _, err := fmt.Fprintf(w, "Last Seen: %s\n", formatUnix(item.LastOccurrenceTimestamp)); err != nil {
 		return err
 	}
+	return nil
+}
+
+func renderItemInstances(w io.Writer, instances []rollbar.ItemInstance) error {
+	if _, err := fmt.Fprintf(w, "Instances: %d\n", len(instances)); err != nil {
+		return err
+	}
+	for i, instance := range instances {
+		if _, err := fmt.Fprintf(w, "\nInstance #%d\n", i+1); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  ID: %d\n", instance.ID); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  UUID: %s\n", fallback(instance.UUID)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  Level: %s\n", fallback(instance.Level)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  Environment: %s\n", fallback(instance.Environment)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  Timestamp: %s\n", formatUnix(instance.Timestamp)); err != nil {
+			return err
+		}
+
+		if _, err := fmt.Fprintln(w, "  Stack Frames:"); err != nil {
+			return err
+		}
+		if len(instance.StackFrames) == 0 {
+			if _, err := fmt.Fprintln(w, "    -"); err != nil {
+				return err
+			}
+		}
+		for _, frame := range instance.StackFrames {
+			location := fallback(frame.Filename)
+			if frame.Line > 0 {
+				location = fmt.Sprintf("%s:%d", location, frame.Line)
+			}
+			method := fallback(frame.Method)
+			if _, err := fmt.Fprintf(w, "    %s (%s)\n", location, method); err != nil {
+				return err
+			}
+		}
+
+		if _, err := fmt.Fprintln(w, "  Payload:"); err != nil {
+			return err
+		}
+		if len(instance.Payload) == 0 {
+			if _, err := fmt.Fprintln(w, "    -"); err != nil {
+				return err
+			}
+			continue
+		}
+
+		payloadJSON, err := json.MarshalIndent(instance.Payload, "", "  ")
+		if err != nil {
+			return err
+		}
+		payloadText := indentLines(string(payloadJSON), "    ")
+		if _, err := fmt.Fprintln(w, payloadText); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -172,4 +247,11 @@ func fallback(v string) string {
 		return "-"
 	}
 	return v
+}
+
+func indentLines(v string, prefix string) string {
+	if v == "" {
+		return prefix
+	}
+	return prefix + strings.ReplaceAll(v, "\n", "\n"+prefix)
 }

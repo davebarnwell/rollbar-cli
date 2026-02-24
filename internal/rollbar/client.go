@@ -43,6 +43,22 @@ type Item struct {
 	LastOccurrenceTimestamp int64
 }
 
+type StackFrame struct {
+	Filename string
+	Line     int64
+	Method   string
+}
+
+type ItemInstance struct {
+	ID          int64
+	UUID        string
+	Level       string
+	Environment string
+	Timestamp   int64
+	StackFrames []StackFrame
+	Payload     map[string]any
+}
+
 type ListItemsResponse struct {
 	Items []Item
 	Raw   map[string]any
@@ -51,6 +67,11 @@ type ListItemsResponse struct {
 type GetItemResponse struct {
 	Item Item
 	Raw  map[string]any
+}
+
+type ListItemInstancesResponse struct {
+	Instances []ItemInstance
+	Raw       map[string]any
 }
 
 type UpdateItemResponse struct {
@@ -66,6 +87,10 @@ type apiEnvelope struct {
 
 type listItemsResult struct {
 	Items []json.RawMessage `json:"items"`
+}
+
+type listItemInstancesResult struct {
+	Instances []json.RawMessage `json:"instances"`
 }
 
 func NewClient(cfg Config) *Client {
@@ -177,6 +202,87 @@ func (c *Client) GetItemByUUID(ctx context.Context, uuid string) (*GetItemRespon
 		return nil, fmt.Errorf("invalid UUID: must not be empty")
 	}
 	return c.getItem(ctx, uuid)
+}
+
+func (c *Client) ListItemInstances(ctx context.Context, identifier string, page int) (*ListItemInstancesResponse, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return nil, fmt.Errorf("invalid item identifier: must not be empty")
+	}
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	endpoint, err := url.Parse(c.baseURL + "/api/1/item/" + url.PathEscape(identifier) + "/instances")
+	if err != nil {
+		return nil, fmt.Errorf("build request URL: %w", err)
+	}
+	if page > 0 {
+		query := endpoint.Query()
+		query.Set("page", strconv.Itoa(page))
+		endpoint.RawQuery = query.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("X-Rollbar-Access-Token", c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	res, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return nil, fmt.Errorf("rollbar API error: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	var env apiEnvelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		return nil, fmt.Errorf("parse envelope: %w", err)
+	}
+	if env.Err != 0 {
+		if env.Message == "" {
+			env.Message = "unknown error"
+		}
+		return nil, fmt.Errorf("rollbar API returned err=%d: %s", env.Err, env.Message)
+	}
+
+	var result listItemInstancesResult
+	if len(env.Result) > 0 {
+		if err := json.Unmarshal(env.Result, &result); err != nil {
+			return nil, fmt.Errorf("parse result.instances: %w", err)
+		}
+		if len(result.Instances) == 0 {
+			var directInstances []json.RawMessage
+			if err := json.Unmarshal(env.Result, &directInstances); err == nil {
+				result.Instances = directInstances
+			}
+		}
+	}
+
+	instances := make([]ItemInstance, 0, len(result.Instances))
+	for _, rawInstance := range result.Instances {
+		instances = append(instances, normalizeInstance(rawInstance))
+	}
+
+	return &ListItemInstancesResponse{
+		Instances: instances,
+		Raw:       raw,
+	}, nil
 }
 
 func (c *Client) UpdateItemByID(ctx context.Context, id int64, body map[string]any) (*UpdateItemResponse, error) {
@@ -364,6 +470,134 @@ func normalizeItemMap(m map[string]any) Item {
 	}
 
 	return item
+}
+
+func normalizeInstance(rawInstance json.RawMessage) ItemInstance {
+	var m map[string]any
+	if err := json.Unmarshal(rawInstance, &m); err != nil {
+		return ItemInstance{}
+	}
+	return normalizeInstanceMap(m)
+}
+
+func normalizeInstanceMap(m map[string]any) ItemInstance {
+	if m == nil {
+		return ItemInstance{}
+	}
+
+	instance := ItemInstance{
+		ID:          getInt64(m, "id"),
+		UUID:        getString(m, "uuid"),
+		Level:       getString(m, "level"),
+		Environment: getString(m, "environment"),
+		Timestamp:   getInt64(m, "timestamp"),
+		StackFrames: extractStackFrames(m),
+		Payload:     extractPayload(m),
+	}
+
+	return instance
+}
+
+func extractStackFrames(instance map[string]any) []StackFrame {
+	body, ok := instance["body"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	frames := make([]StackFrame, 0)
+
+	if trace, ok := body["trace"].(map[string]any); ok {
+		frames = append(frames, extractTraceFrames(trace)...)
+	}
+
+	if chain, ok := body["trace_chain"].([]any); ok {
+		for _, rawTrace := range chain {
+			trace, ok := rawTrace.(map[string]any)
+			if !ok {
+				continue
+			}
+			frames = append(frames, extractTraceFrames(trace)...)
+		}
+	}
+
+	return frames
+}
+
+func extractTraceFrames(trace map[string]any) []StackFrame {
+	rawFrames, ok := trace["frames"].([]any)
+	if !ok {
+		return nil
+	}
+
+	frames := make([]StackFrame, 0, len(rawFrames))
+	for _, rawFrame := range rawFrames {
+		frameData, ok := rawFrame.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		frame := StackFrame{
+			Filename: firstString(frameData, "filename", "abs_path", "path", "file"),
+			Line:     firstInt64(frameData, "lineno", "line", "line_number"),
+			Method:   firstString(frameData, "method", "function"),
+		}
+		if frame.Filename == "" && frame.Line == 0 && frame.Method == "" {
+			continue
+		}
+		frames = append(frames, frame)
+	}
+
+	return frames
+}
+
+func extractPayload(instance map[string]any) map[string]any {
+	payload := make(map[string]any)
+	for _, key := range []string{"body", "request", "server", "client", "person", "custom", "data", "notifier"} {
+		if value, ok := instance[key]; ok {
+			payload[key] = value
+		}
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+	return payload
+}
+
+func firstString(data map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := data[key]; ok {
+			if s, ok := value.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func firstInt64(data map[string]any, keys ...string) int64 {
+	for _, key := range keys {
+		if value, ok := data[key]; ok {
+			switch t := value.(type) {
+			case float64:
+				if t != 0 {
+					return int64(t)
+				}
+			case int64:
+				if t != 0 {
+					return t
+				}
+			case int:
+				if t != 0 {
+					return int64(t)
+				}
+			case json.Number:
+				if n, err := t.Int64(); err == nil && n != 0 {
+					return n
+				}
+			}
+		}
+	}
+	return 0
 }
 
 func getString(data map[string]any, path ...string) string {

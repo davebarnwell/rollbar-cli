@@ -59,12 +59,26 @@ rollbar-cli items list --status active --json \
 ## Triage Workflow
 
 1. Start with production + `error`/`critical`.
-2. Open top counters/IDs with `rollbar-cli items get`.
+2. Open top counters/IDs with `rollbar-cli items get --instances` to include stack frames, exact file/line, and payload details.
 3. Update state using `rollbar-cli items update` when triaged.
 
 ## Example Follow-up Commands
 
 ```bash
 rollbar-cli items get --id 275123456 --json
+rollbar-cli items get --id 275123456 --instances
+rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --instances-page 1 --json
 rollbar-cli items update --id 275123456 --status resolved --resolved-in-version aabbcc1
+```
+
+## Item Detail With Instances
+
+Use `--instances` on `items get` when you need full occurrence context.
+
+```bash
+# text output: item details + instance details
+rollbar-cli items get --id 275123456 --instances
+
+# JSON output: returns both item and instances response payloads
+rollbar-cli items get --id 275123456 --instances --json
 ```
