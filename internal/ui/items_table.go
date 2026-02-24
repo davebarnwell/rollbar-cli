@@ -22,8 +22,8 @@ type model struct {
 
 func RenderItems(items []rollbar.Item) error {
 	if len(items) == 0 {
-		fmt.Println("No items found.")
-		return nil
+		_, err := fmt.Fprintln(os.Stdout, "No items found.")
+		return err
 	}
 
 	if term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stdin.Fd())) {
@@ -34,14 +34,37 @@ func RenderItems(items []rollbar.Item) error {
 }
 
 func RenderItem(item rollbar.Item) error {
-	fmt.Printf("ID: %d\n", item.ID)
-	fmt.Printf("Counter: %d\n", item.Counter)
-	fmt.Printf("Title: %s\n", fallback(item.Title))
-	fmt.Printf("Level: %s\n", fallback(item.Level))
-	fmt.Printf("Status: %s\n", fallback(item.Status))
-	fmt.Printf("Environment: %s\n", fallback(item.Environment))
-	fmt.Printf("Total Occurrences: %d\n", item.TotalOccurrences)
-	fmt.Printf("Last Seen: %s\n", formatUnix(item.LastOccurrenceTimestamp))
+	if err := renderItem(os.Stdout, item); err != nil {
+		return err
+	}
+	return nil
+}
+
+func renderItem(w io.Writer, item rollbar.Item) error {
+	if _, err := fmt.Fprintf(w, "ID: %d\n", item.ID); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Counter: %d\n", item.Counter); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Title: %s\n", fallback(item.Title)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Level: %s\n", fallback(item.Level)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Status: %s\n", fallback(item.Status)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Environment: %s\n", fallback(item.Environment)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Total Occurrences: %d\n", item.TotalOccurrences); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Last Seen: %s\n", formatUnix(item.LastOccurrenceTimestamp)); err != nil {
+		return err
+	}
 	return nil
 }
 

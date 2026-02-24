@@ -23,6 +23,9 @@ go build -o rollbar-cli .
 ## Testing
 
 ```bash
+# vet code
+go vet ./...
+
 # run all unit tests
 go test ./...
 

@@ -65,11 +65,7 @@ var itemsListCmd = &cobra.Command{
 			return fmt.Errorf("invalid --output %q (expected: text|json)", itemsOutput)
 		}
 
-		client := rollbar.NewClient(rollbar.Config{
-			AccessToken: cfg.Token,
-			BaseURL:     cfg.BaseURL,
-			Timeout:     cfg.Timeout,
-		})
+		client := newRollbarClient()
 
 		resp, err := client.ListItems(cmd.Context(), rollbar.ListItemsOptions{
 			Page:        itemsPage,
@@ -82,9 +78,7 @@ var itemsListCmd = &cobra.Command{
 		}
 
 		if itemsOutput == "json" {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(resp.Raw)
+			return writeJSON(resp.Raw)
 		}
 
 		return ui.RenderItems(resp.Items)
@@ -115,11 +109,7 @@ var itemsGetCmd = &cobra.Command{
 			return err
 		}
 
-		client := rollbar.NewClient(rollbar.Config{
-			AccessToken: cfg.Token,
-			BaseURL:     cfg.BaseURL,
-			Timeout:     cfg.Timeout,
-		})
+		client := newRollbarClient()
 
 		var resp *rollbar.GetItemResponse
 		if uuid != "" {
@@ -132,9 +122,7 @@ var itemsGetCmd = &cobra.Command{
 		}
 
 		if itemsGetOutput == "json" {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(resp.Raw)
+			return writeJSON(resp.Raw)
 		}
 
 		return ui.RenderItem(resp.Item)
@@ -169,11 +157,7 @@ var itemsUpdateCmd = &cobra.Command{
 			return err
 		}
 
-		client := rollbar.NewClient(rollbar.Config{
-			AccessToken: cfg.Token,
-			BaseURL:     cfg.BaseURL,
-			Timeout:     cfg.Timeout,
-		})
+		client := newRollbarClient()
 
 		if uuid != "" {
 			getResp, err := client.GetItemByUUID(cmd.Context(), uuid)
@@ -192,9 +176,7 @@ var itemsUpdateCmd = &cobra.Command{
 		}
 
 		if itemsUpdateOutput == "json" {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(updateResp.Raw)
+			return writeJSON(updateResp.Raw)
 		}
 
 		if updateResp.Item.ID > 0 {
@@ -206,9 +188,27 @@ var itemsUpdateCmd = &cobra.Command{
 			return ui.RenderItem(getResp.Item)
 		}
 
-		fmt.Printf("Item %d updated.\n", id)
-		return nil
+		return writeStdoutf("Item %d updated.\n", id)
 	},
+}
+
+func newRollbarClient() *rollbar.Client {
+	return rollbar.NewClient(rollbar.Config{
+		AccessToken: cfg.Token,
+		BaseURL:     cfg.BaseURL,
+		Timeout:     cfg.Timeout,
+	})
+}
+
+func writeJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+func writeStdoutf(format string, args ...any) error {
+	_, err := fmt.Fprintf(os.Stdout, format, args...)
+	return err
 }
 
 func buildUpdateBody(cmd *cobra.Command) (map[string]any, error) {

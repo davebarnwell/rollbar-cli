@@ -9,7 +9,9 @@ import (
 
 func run() int {
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
+			return 1
+		}
 		return 1
 	}
 	return 0

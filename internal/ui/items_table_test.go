@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -85,5 +86,23 @@ func TestHelpers(t *testing.T) {
 	}
 	if got := min(2, 5); got != 2 {
 		t.Fatalf("min(2,5) = %d, want 2", got)
+	}
+}
+
+type failWriter struct{}
+
+func (failWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func TestRenderItemWriteError(t *testing.T) {
+	if err := renderItem(failWriter{}, rollbar.Item{}); err == nil {
+		t.Fatalf("expected write error, got nil")
+	}
+}
+
+func TestRenderItemsPlainWriteError(t *testing.T) {
+	if err := renderItemsPlain(failWriter{}, []rollbar.Item{{Counter: 1}}); err == nil {
+		t.Fatalf("expected write error, got nil")
 	}
 }
