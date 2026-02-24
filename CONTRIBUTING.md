@@ -27,4 +27,4 @@ AI PRs are first-class citizens here. We just want transparency so reviewers kno
 
 ## Current Focus & Roadmap 
 
-- Expose the official rollbar API via the CLI where it would be useful for automation via AI Skills
+- Expose the official [rollbar API](https://docs.rollbar.com/reference/getting-started-1) via the CLI where it would be useful for automation via AI Skills
