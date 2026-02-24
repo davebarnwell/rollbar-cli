@@ -10,7 +10,8 @@ A Go CLI for querying [Rollbar](https://rollbar.com), initially just items, with
 ## Why?
 
 Primarily because I wanted to build an AI skill to allow AI interaction with Rollbar via prompts such as
-"Look at unresolved rollbar errors from the last 24 hours and create fixes with associated PRs"
+"Look at unresolved rollbar errors from the last 24 hours and create fixes with associated PRs".
+And the existing [Rollbar CLI](https://github.com/rollbar/rollbar-cli) did not cut it and appears abandoned.
 
 ## Build
 
@@ -38,7 +39,7 @@ go tool cover -html=coverage.out
 Provide a Rollbar project token with `read` scope:
 
 - flag: `--token`
-- env var: `ROLLBAR_ACCESS_TOKEN`
+- or env var: `ROLLBAR_ACCESS_TOKEN`
 
 ## Usage
 
