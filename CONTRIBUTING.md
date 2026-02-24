@@ -1,6 +1,6 @@
 # Contributing to OpenClaw
 
-Welcome to the lobster tank! 🦞
+Welcome!
 
 ## How to Contribute
 
