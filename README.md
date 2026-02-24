@@ -20,6 +20,31 @@ go mod tidy
 go build -o rollbar-cli .
 ```
 
+## Makefile Commands
+
+```bash
+# show available targets
+make help
+
+# build binary into bin/
+make build
+
+# install skill into common AI tool skill directories
+make install-skill
+
+# install skill + install CLI with go install
+make install
+
+# run unit tests
+make test
+
+# run unit tests with coverage
+make test-cover
+
+# remove build artifacts
+make clean
+```
+
 ## Testing
 
 ```bash
