@@ -1,8 +1,8 @@
 ---
 name: rollbar-cli
 description: >-
-  Investigates production errors and deploy regressions through the Rollbar CLI
-  server. Use when debugging exceptions, incident spikes, fingerprint groups,
+  Investigates production errors and deploy regressions through the Rollbar CLI. 
+  Use when debugging exceptions, incident spikes, fingerprint groups,
   affected-user impact, environment-specific failures, release correlation, or
   when the user mentions Rollbar, occurrences, items, traces, regressions, or
   error monitoring.
@@ -22,8 +22,8 @@ Use this skill to quickly find and triage Rollbar issues with `rollbar-cli`.
 
 - `rollbar-cli` is installed or available from this repo.
 - Auth token is set:
-  - `export ROLLBAR_ACCESS_TOKEN=...`
-  - or pass `--token ...`
+    - `export ROLLBAR_ACCESS_TOKEN=...`
+    - or pass `--token ...`
 
 ## Core Commands
 
