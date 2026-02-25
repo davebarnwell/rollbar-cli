@@ -71,6 +71,9 @@ Provide a Rollbar project token with `read` scope:
 
 ## Usage
 
+If you've built the CLI with `go install` or `make install` you can run it directly with `rollbar-cli ...` which is
+recommended ([see the go documentation](https://pkg.go.dev/cmd/go#hdr-Compile_and_install_packages_and_dependencies)).
+
 ```bash
 # text/TUI output
 ./rollbar-cli items list --status active --environment production
