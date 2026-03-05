@@ -15,7 +15,7 @@ Use this skill to quickly find and triage Rollbar issues with `rollbar-cli`.
 ## When To Use
 
 - You need a fast view of current active issues.
-- You want recent issues in JSON for automation or triage notes.
+- You want recent issues in stable JSON or NDJSON for automation or triage notes.
 - You want to narrow by environment and severity level.
 - You need to inspect raw occurrences for a specific item or fetch one occurrence directly.
 
@@ -25,6 +25,7 @@ Use this skill to quickly find and triage Rollbar issues with `rollbar-cli`.
 - Auth token is set:
     - `export ROLLBAR_ACCESS_TOKEN=...`
     - or pass `--token ...`
+- Optional config profiles are supported via `--config`, `--profile`, `ROLLBAR_CLI_CONFIG`, or `~/.config/rollbar-cli/config.json`.
 
 ## Core Commands
 
@@ -40,7 +41,17 @@ rollbar-cli items list --status active --output text
 rollbar-cli items list --status active --json
 ```
 
-### 3) Filter by environment and level
+### 3) Raw API JSON or NDJSON for scripting
+
+```bash
+# raw Rollbar envelope
+rollbar-cli items list --status active --raw-json
+
+# normalized NDJSON
+rollbar-cli items list --status active --ndjson --limit 20
+```
+
+### 4) Filter by environment, level, and time window
 
 ```bash
 rollbar-cli items list \
@@ -48,16 +59,19 @@ rollbar-cli items list \
   --environment production \
   --level error \
   --level critical \
+  --last 24h \
+  --sort counter_desc \
+  --limit 25 \
   --json
 ```
 
-### 4) Next page of recent issues
+### 5) Next pages of recent issues
 
 ```bash
-rollbar-cli items list --status active --page 2 --json
+rollbar-cli items list --status active --page 2 --pages 3 --json
 ```
 
-### 5) Get one item by ID or UUID
+### 6) Get one item by ID or UUID
 
 ```bash
 # by item id
@@ -71,16 +85,24 @@ rollbar-cli items get 01234567-89ab-cdef-0123-456789abcdef --json
 rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --json
 ```
 
-### 6) Get item with instances (stack frames, payload)
+### 7) Get item with instances and shaped payload
 
 ```bash
+# stable JSON
 rollbar-cli items get --id 275123456 --instances --json
+
+# text output with request-only payload summary
+rollbar-cli items get \
+  --id 275123456 \
+  --instances \
+  --payload summary \
+  --payload-section request
 
 # fetch a specific instances page
 rollbar-cli items get --id 275123456 --instances --instances-page 2 --json
 ```
 
-### 7) Update item status/title/level
+### 8) Update item status/title/level
 
 ```bash
 rollbar-cli items update --id 275123456 \
@@ -91,12 +113,18 @@ rollbar-cli items update --id 275123456 \
   --json
 ```
 
-### 8) Update assignment/team/snooze
+### 9) Task-shaped item actions
 
 ```bash
-# assign to user + team
-rollbar-cli items update --id 275123456 --assigned-user-id 321 --assigned-team-id 88 --json
+rollbar-cli items resolve --id 275123456 --resolved-in-version aabbcc1 --json
+rollbar-cli items mute --id 275123456 --json
+rollbar-cli items assign --id 275123456 --assigned-user-id 321 --assigned-team-id 88 --json
+rollbar-cli items snooze --id 275123456 --duration 1h --json
+```
 
+### 10) Update assignment/team/snooze via generic update
+
+```bash
 # clear assignment and snooze for 1 hour
 rollbar-cli items update --id 275123456 \
   --clear-assigned-user \
@@ -106,7 +134,7 @@ rollbar-cli items update --id 275123456 \
   --json
 ```
 
-### 9) List occurrences for an item
+### 11) List occurrences for an item
 
 ```bash
 # by item id
@@ -116,9 +144,12 @@ rollbar-cli occurrences list 275123456 --json
 
 # by item uuid
 rollbar-cli occurrences list --item-uuid 01234567-89ab-cdef-0123-456789abcdef --json
+
+# NDJSON for downstream tooling
+rollbar-cli occurrences list --item-id 275123456 --ndjson
 ```
 
-### 10) Get one occurrence by ID or UUID
+### 12) Get one occurrence by ID or UUID
 
 ```bash
 # by occurrence id
@@ -133,11 +164,21 @@ rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 rollbar-cli occurences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 ```
 
+## Optional: Watch Active Issues During Triage
+
+```bash
+rollbar-cli items watch \
+  --status active \
+  --environment production \
+  --interval 30s \
+  --count 10
+```
+
 ## Optional: Show Top N Most Recent With `jq`
 
 ```bash
 rollbar-cli items list --status active --json \
-| jq '.result.items
+| jq '.items
       | sort_by(.last_occurrence_timestamp // 0)
       | reverse
       | .[:10]'
@@ -146,17 +187,19 @@ rollbar-cli items list --status active --json \
 ## Triage Workflow
 
 1. Start with production + `error`/`critical`.
-2. Open top counters/IDs with `rollbar-cli items get` and include `--instances` for stack context.
-3. Use `rollbar-cli occurrences list` when you want to inspect occurrence-level payloads for an item.
-4. Update state/assignment using `rollbar-cli items update` when triaged.
+2. Narrow with `--last`, `--since`, `--sort`, and `--limit`.
+3. Open top counters/IDs with `rollbar-cli items get --instances` for stack context.
+4. Use `rollbar-cli occurrences list` when you want to inspect occurrence-level payloads for an item.
+5. Use `items resolve|mute|assign|snooze` for common triage actions.
 
 ## Example Follow-up Commands
 
 ```bash
-rollbar-cli items get --id 275123456 --json
-rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --json
-rollbar-cli occurrences list --item-id 275123456 --json
+rollbar-cli items list --status active --environment production --last 24h --sort counter_desc --limit 10 --json
+rollbar-cli items get --id 275123456 --instances --payload summary --payload-section request
+rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --raw-json
+rollbar-cli occurrences list --item-id 275123456 --ndjson
 rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
-rollbar-cli items update --id 275123456 --status resolved --resolved-in-version aabbcc1
-rollbar-cli items update --uuid 01234567-89ab-cdef-0123-456789abcdef --level error --title "Checkout failure"
+rollbar-cli items resolve --id 275123456 --resolved-in-version aabbcc1
+rollbar-cli items assign --uuid 01234567-89ab-cdef-0123-456789abcdef --assigned-user-id 321
 ```
