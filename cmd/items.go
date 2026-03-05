@@ -108,6 +108,8 @@ type itemListJSONOutput struct {
 	Items []rollbar.Item `json:"items"`
 }
 
+var defaultWatchFields = []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
+
 func newItemsCmd(cfg *cliConfig) *cobra.Command {
 	var (
 		listOpts    itemsListOptions
@@ -476,7 +478,7 @@ func prepareWatchListOptions(opts itemsListOptions) itemsListOptions {
 		return opts
 	}
 	if output == outputText && len(opts.Fields) == 0 {
-		opts.Fields = []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
+		opts.Fields = append([]string(nil), defaultWatchFields...)
 	}
 	return opts
 }

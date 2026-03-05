@@ -82,9 +82,8 @@ func TestItemsCommandValidationErrors(t *testing.T) {
 
 func TestPrepareWatchListOptionsForcesPlainTextDefaults(t *testing.T) {
 	opts := prepareWatchListOptions(itemsListOptions{})
-	want := []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
-	if !reflect.DeepEqual(opts.Fields, want) {
-		t.Fatalf("prepareWatchListOptions() fields = %#v, want %#v", opts.Fields, want)
+	if !reflect.DeepEqual(opts.Fields, defaultWatchFields) {
+		t.Fatalf("prepareWatchListOptions() fields = %#v, want %#v", opts.Fields, defaultWatchFields)
 	}
 }
 

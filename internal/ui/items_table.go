@@ -52,12 +52,9 @@ type model struct {
 	occurrences     []rollbar.ItemInstance
 	statusMessage   string
 	interactions    *ItemListInteractions
+	lookPath        func(string) (string, error)
+	command         func(string, ...string) *exec.Cmd
 }
-
-var (
-	execLookPath = exec.LookPath
-	execCommand  = exec.Command
-)
 
 func RenderItems(items []rollbar.Item) error {
 	return RenderItemsWithOptions(items, ItemListRenderOptions{})
@@ -235,6 +232,8 @@ func renderItemsTUI(items []rollbar.Item, opts ItemListRenderOptions) error {
 		table:        t,
 		items:        items,
 		interactions: opts.Interactions,
+		lookPath:     exec.LookPath,
+		command:      exec.Command,
 	}, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
@@ -471,19 +470,35 @@ func (m model) copyItemID(item rollbar.Item) error {
 	if m.interactions != nil && m.interactions.CopyItemID != nil {
 		return m.interactions.CopyItemID(item)
 	}
-	for _, candidate := range clipboardCommands(runtime.GOOS) {
-		path, err := execLookPath(candidate.name)
+	lookPath := m.lookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	command := m.command
+	if command == nil {
+		command = exec.Command
+	}
+
+	candidates := clipboardCommands(runtime.GOOS)
+	tried := clipboardCommandNames(candidates)
+	var lastErr error
+	for _, candidate := range candidates {
+		path, err := lookPath(candidate.name)
 		if err != nil {
 			continue
 		}
-		cmd := execCommand(path, candidate.args...)
+		cmd := command(path, candidate.args...)
 		cmd.Stdin = strings.NewReader(strconv.FormatInt(item.ID, 10))
 		if err := cmd.Run(); err != nil {
-			return err
+			lastErr = err
+			continue
 		}
 		return nil
 	}
-	return fmt.Errorf("clipboard support unavailable")
+	if lastErr != nil {
+		return fmt.Errorf("clipboard support unavailable on %s (tried: %s; last error: %v)", runtime.GOOS, strings.Join(tried, ", "), lastErr)
+	}
+	return fmt.Errorf("clipboard support unavailable on %s (tried: %s)", runtime.GOOS, strings.Join(tried, ", "))
 }
 
 type clipboardCommand struct {
@@ -506,6 +521,14 @@ func clipboardCommands(goos string) []clipboardCommand {
 			{name: "clip"},
 		}
 	}
+}
+
+func clipboardCommandNames(commands []clipboardCommand) []string {
+	names := make([]string, 0, len(commands))
+	for _, command := range commands {
+		names = append(names, command.name)
+	}
+	return names
 }
 
 func fieldHeaders(fields []string) []string {
