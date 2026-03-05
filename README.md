@@ -17,6 +17,8 @@ When combined with an appropriate GitHub Skill to create PRs etc..
  
 NOTE: The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and deployments.
 
+The Official [Rollbar API docs](https://docs.rollbar.com/reference/getting-started-1).
+
 ## Build
 
 ```bash
