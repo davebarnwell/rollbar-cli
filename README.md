@@ -77,6 +77,31 @@ Provide a Rollbar project token with `read` scope (or `read` and `write` if you 
 - flag: `--token`
 - or env var: `ROLLBAR_ACCESS_TOKEN`
 
+## Install shell tab completion
+
+```bash
+# install bash completion
+# bash one off
+source <(rollbar-cli completion bash)
+
+# OR bash global
+rollbar-cli completion bash > rollbar-cli.bash
+sudo cp rollbar-cli.bash /etc/bash_completion.d/
+
+# install zsh completion
+# zsh one off
+source <(rollbar-cli completion zsh)
+
+# OR zsh global
+rollbar-cli completion zsh > _rollbar-cli
+sudo cp _rollbar-cli /usr/local/share/zsh/site-functions/
+
+# OR zsh user only
+mkdir -p ~/.zsh/completions
+rollbar-cli completion zsh > ~/.zsh/completions/_rollbar-cli
+```
+
+
 ## Usage
 
 If you've built the CLI with `go install` or `make install` you can run it directly with `rollbar-cli ...` which is
