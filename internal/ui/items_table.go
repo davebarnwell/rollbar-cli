@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -19,8 +20,9 @@ import (
 )
 
 type ItemListRenderOptions struct {
-	Fields    []string
-	NoHeaders bool
+	Fields       []string
+	NoHeaders    bool
+	Interactions *ItemListInteractions
 }
 
 type PayloadRenderOptions struct {
@@ -33,10 +35,22 @@ type ItemDetailsRenderOptions struct {
 	Payload PayloadRenderOptions
 }
 
+type ItemListInteractions struct {
+	FetchOccurrences func(item rollbar.Item) ([]rollbar.ItemInstance, error)
+	ResolveItem      func(item rollbar.Item) (rollbar.Item, error)
+	MuteItem         func(item rollbar.Item) (rollbar.Item, error)
+	CopyItemID       func(item rollbar.Item) error
+	Payload          PayloadRenderOptions
+}
+
 type model struct {
-	table       table.Model
-	items       []rollbar.Item
-	showDetails bool
+	table           table.Model
+	items           []rollbar.Item
+	showDetails     bool
+	showOccurrences bool
+	occurrences     []rollbar.ItemInstance
+	statusMessage   string
+	interactions    *ItemListInteractions
 }
 
 func RenderItems(items []rollbar.Item) error {
@@ -50,7 +64,7 @@ func RenderItemsWithOptions(items []rollbar.Item, opts ItemListRenderOptions) er
 	}
 
 	if shouldUseItemTUI(opts) && term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stdin.Fd())) {
-		return renderItemsTUI(items)
+		return renderItemsTUI(items, opts)
 	}
 
 	return renderItemsPlain(os.Stdout, items, opts)
@@ -177,7 +191,7 @@ func renderItemInstances(w io.Writer, instances []rollbar.ItemInstance, payloadO
 	return nil
 }
 
-func renderItemsTUI(items []rollbar.Item) error {
+func renderItemsTUI(items []rollbar.Item, opts ItemListRenderOptions) error {
 	columns := []table.Column{
 		{Title: "ID", Width: 10},
 		{Title: "Counter", Width: 9},
@@ -211,7 +225,11 @@ func renderItemsTUI(items []rollbar.Item) error {
 	styles.Selected = styles.Selected.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Bold(true)
 	t.SetStyles(styles)
 
-	p := tea.NewProgram(model{table: t, items: items}, tea.WithAltScreen())
+	p := tea.NewProgram(model{
+		table:        t,
+		items:        items,
+		interactions: opts.Interactions,
+	}, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
@@ -246,8 +264,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
 		case "enter":
-			m.showDetails = !m.showDetails
+			item, ok := m.selectedItem()
+			if !ok {
+				return m, nil
+			}
+			if m.interactions == nil || m.interactions.FetchOccurrences == nil {
+				m.statusMessage = "occurrence drill-down unavailable"
+				return m, nil
+			}
+			occurrences, err := m.interactions.FetchOccurrences(item)
+			if err != nil {
+				m.statusMessage = fmt.Sprintf("load occurrences failed: %v", err)
+				return m, nil
+			}
+			m.occurrences = occurrences
+			m.showOccurrences = true
+			m.statusMessage = fmt.Sprintf("loaded %d occurrences for item %d", len(occurrences), item.ID)
 			return m, nil
+		case "o":
+			m.showDetails = !m.showDetails
+			if m.showDetails {
+				m.statusMessage = "details opened"
+			} else {
+				m.statusMessage = "details hidden"
+			}
+			return m, nil
+		case "y":
+			item, ok := m.selectedItem()
+			if !ok {
+				return m, nil
+			}
+			if err := m.copyItemID(item); err != nil {
+				m.statusMessage = fmt.Sprintf("copy failed: %v", err)
+			} else {
+				m.statusMessage = fmt.Sprintf("copied item id %d", item.ID)
+			}
+			return m, nil
+		case "r":
+			return m.applyUpdate(func(item rollbar.Item) (rollbar.Item, error) {
+				if m.interactions == nil || m.interactions.ResolveItem == nil {
+					return item, fmt.Errorf("resolve unavailable")
+				}
+				return m.interactions.ResolveItem(item)
+			}, "resolved")
+		case "m":
+			return m.applyUpdate(func(item rollbar.Item) (rollbar.Item, error) {
+				if m.interactions == nil || m.interactions.MuteItem == nil {
+					return item, fmt.Errorf("mute unavailable")
+				}
+				return m.interactions.MuteItem(item)
+			}, "muted")
 		}
 	case tea.WindowSizeMsg:
 		m.table.SetWidth(msg.Width - 2)
@@ -260,10 +326,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	help := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("↑/↓ navigate • enter toggle details • q quit")
+	help := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("↑/↓ navigate • enter occurrences • o details • y copy id • r resolve • m mute • q quit")
 	view := "\n" + m.table.View() + "\n"
 	if m.showDetails {
 		view += m.detailsView() + "\n"
+	}
+	if m.showOccurrences {
+		view += m.occurrencesView() + "\n"
+	}
+	if m.statusMessage != "" {
+		view += lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.statusMessage) + "\n"
 	}
 	return view + help + "\n"
 }
@@ -290,6 +362,34 @@ func (m model) detailsView() string {
 		Padding(0, 1).
 		Render(strings.Join(details, "\n"))
 	return box
+}
+
+func (m model) occurrencesView() string {
+	lines := []string{"Occurrences"}
+	if len(m.occurrences) == 0 {
+		lines = append(lines, "None")
+	} else {
+		limit := min(5, len(m.occurrences))
+		for i := 0; i < limit; i++ {
+			occurrence := m.occurrences[i]
+			lines = append(lines, fmt.Sprintf(
+				"%d  %s  %s  %s  %s",
+				occurrence.ID,
+				fallback(occurrence.UUID),
+				fallback(occurrence.Level),
+				fallback(occurrence.Environment),
+				formatUnix(occurrence.Timestamp),
+			))
+		}
+		if len(m.occurrences) > limit {
+			lines = append(lines, fmt.Sprintf("... %d more", len(m.occurrences)-limit))
+		}
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1).
+		Render(strings.Join(lines, "\n"))
 }
 
 func formatUnix(ts int64) string {
@@ -322,6 +422,55 @@ func indentLines(v string, prefix string) string {
 
 func shouldUseItemTUI(opts ItemListRenderOptions) bool {
 	return len(opts.Fields) == 0 && !opts.NoHeaders
+}
+
+func (m model) selectedItem() (rollbar.Item, bool) {
+	idx := m.table.Cursor()
+	if idx < 0 || idx >= len(m.items) {
+		return rollbar.Item{}, false
+	}
+	return m.items[idx], true
+}
+
+func (m model) applyUpdate(fn func(item rollbar.Item) (rollbar.Item, error), label string) (tea.Model, tea.Cmd) {
+	item, ok := m.selectedItem()
+	if !ok {
+		return m, nil
+	}
+	updated, err := fn(item)
+	if err != nil {
+		m.statusMessage = err.Error()
+		return m, nil
+	}
+	idx := m.table.Cursor()
+	m.items[idx] = updated
+	rows := m.table.Rows()
+	if idx >= 0 && idx < len(rows) {
+		rows[idx] = table.Row{
+			strconv.FormatInt(updated.ID, 10),
+			strconv.FormatInt(updated.Counter, 10),
+			updated.Level,
+			updated.Status,
+			updated.Environment,
+			formatUnix(updated.LastOccurrenceTimestamp),
+			updated.Title,
+		}
+		m.table.SetRows(rows)
+	}
+	m.statusMessage = fmt.Sprintf("item %d %s", updated.ID, label)
+	return m, nil
+}
+
+func (m model) copyItemID(item rollbar.Item) error {
+	if m.interactions != nil && m.interactions.CopyItemID != nil {
+		return m.interactions.CopyItemID(item)
+	}
+	if path, err := exec.LookPath("pbcopy"); err == nil {
+		cmd := exec.Command(path)
+		cmd.Stdin = strings.NewReader(strconv.FormatInt(item.ID, 10))
+		return cmd.Run()
+	}
+	return fmt.Errorf("clipboard support unavailable")
 }
 
 func fieldHeaders(fields []string) []string {

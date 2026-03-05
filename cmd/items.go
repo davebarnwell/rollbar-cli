@@ -446,11 +446,43 @@ func runItemsList(cmd *cobra.Command, cfg *cliConfig, opts itemsListOptions) err
 		}
 		return writeNDJSON(records)
 	default:
+		client := newRollbarClient(cfg)
 		return ui.RenderItemsWithOptions(items, ui.ItemListRenderOptions{
 			Fields:    normalizeFields(opts.Fields),
 			NoHeaders: opts.NoHeaders,
+			Interactions: &ui.ItemListInteractions{
+				FetchOccurrences: func(item rollbar.Item) ([]rollbar.ItemInstance, error) {
+					resp, err := client.ListItemInstances(cmd.Context(), strconv.FormatInt(item.ID, 10), 1)
+					if err != nil {
+						return nil, err
+					}
+					sortOccurrences(resp.Instances)
+					return resp.Instances, nil
+				},
+				ResolveItem: func(item rollbar.Item) (rollbar.Item, error) {
+					return updateItemForTUI(cmd, client, item.ID, map[string]any{"status": "resolved"})
+				},
+				MuteItem: func(item rollbar.Item) (rollbar.Item, error) {
+					return updateItemForTUI(cmd, client, item.ID, map[string]any{"status": "muted"})
+				},
+			},
 		})
 	}
+}
+
+func updateItemForTUI(cmd *cobra.Command, client *rollbar.Client, id int64, body map[string]any) (rollbar.Item, error) {
+	resp, err := client.UpdateItemByID(cmd.Context(), id, body)
+	if err != nil {
+		return rollbar.Item{}, err
+	}
+	if resp.Item.ID > 0 {
+		return resp.Item, nil
+	}
+	getResp, err := client.GetItemByID(cmd.Context(), id)
+	if err != nil {
+		return rollbar.Item{}, err
+	}
+	return getResp.Item, nil
 }
 
 func collectAndShapeItems(cmd *cobra.Command, cfg *cliConfig, opts itemsListOptions) ([]rollbar.Item, map[string]any, error) {
