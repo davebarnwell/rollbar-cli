@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -51,10 +52,18 @@ type model struct {
 	occurrences     []rollbar.ItemInstance
 	statusMessage   string
 	interactions    *ItemListInteractions
+	lookPath        func(string) (string, error)
+	command         func(string, ...string) *exec.Cmd
 }
+
+var defaultItemListFields = []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
 
 func RenderItems(items []rollbar.Item) error {
 	return RenderItemsWithOptions(items, ItemListRenderOptions{})
+}
+
+func DefaultItemListFields() []string {
+	return append([]string(nil), defaultItemListFields...)
 }
 
 func RenderItemsWithOptions(items []rollbar.Item, opts ItemListRenderOptions) error {
@@ -229,6 +238,8 @@ func renderItemsTUI(items []rollbar.Item, opts ItemListRenderOptions) error {
 		table:        t,
 		items:        items,
 		interactions: opts.Interactions,
+		lookPath:     exec.LookPath,
+		command:      exec.Command,
 	}, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
@@ -237,7 +248,7 @@ func renderItemsTUI(items []rollbar.Item, opts ItemListRenderOptions) error {
 func renderItemsPlain(w io.Writer, items []rollbar.Item, opts ItemListRenderOptions) error {
 	fields := opts.Fields
 	if len(fields) == 0 {
-		fields = []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
+		fields = defaultItemListFields
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if !opts.NoHeaders {
@@ -465,12 +476,65 @@ func (m model) copyItemID(item rollbar.Item) error {
 	if m.interactions != nil && m.interactions.CopyItemID != nil {
 		return m.interactions.CopyItemID(item)
 	}
-	if path, err := exec.LookPath("pbcopy"); err == nil {
-		cmd := exec.Command(path)
-		cmd.Stdin = strings.NewReader(strconv.FormatInt(item.ID, 10))
-		return cmd.Run()
+	lookPath := m.lookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
 	}
-	return fmt.Errorf("clipboard support unavailable")
+	command := m.command
+	if command == nil {
+		command = exec.Command
+	}
+
+	candidates := clipboardCommands(runtime.GOOS)
+	tried := clipboardCommandNames(candidates)
+	var lastErr error
+	for _, candidate := range candidates {
+		path, err := lookPath(candidate.name)
+		if err != nil {
+			continue
+		}
+		cmd := command(path, candidate.args...)
+		cmd.Stdin = strings.NewReader(strconv.FormatInt(item.ID, 10))
+		if err := cmd.Run(); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	if lastErr != nil {
+		return fmt.Errorf("clipboard support unavailable on %s (tried: %s; last error: %v)", runtime.GOOS, strings.Join(tried, ", "), lastErr)
+	}
+	return fmt.Errorf("clipboard support unavailable on %s (tried: %s)", runtime.GOOS, strings.Join(tried, ", "))
+}
+
+type clipboardCommand struct {
+	name string
+	args []string
+}
+
+func clipboardCommands(goos string) []clipboardCommand {
+	switch goos {
+	case "windows":
+		return []clipboardCommand{{name: "clip"}}
+	case "darwin":
+		return []clipboardCommand{{name: "pbcopy"}}
+	default:
+		return []clipboardCommand{
+			{name: "wl-copy"},
+			{name: "xclip", args: []string{"-selection", "clipboard"}},
+			{name: "xsel", args: []string{"--clipboard", "--input"}},
+			{name: "pbcopy"},
+			{name: "clip"},
+		}
+	}
+}
+
+func clipboardCommandNames(commands []clipboardCommand) []string {
+	names := make([]string, 0, len(commands))
+	for _, command := range commands {
+		names = append(names, command.name)
+	}
+	return names
 }
 
 func fieldHeaders(fields []string) []string {

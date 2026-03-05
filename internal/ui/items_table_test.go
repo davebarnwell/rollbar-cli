@@ -3,8 +3,12 @@ package ui
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -212,6 +216,103 @@ func TestModelCopyAndResolveActions(t *testing.T) {
 	}
 }
 
+func TestClipboardCommands(t *testing.T) {
+	if got := clipboardCommands("darwin"); len(got) != 1 || got[0].name != "pbcopy" {
+		t.Fatalf("unexpected darwin clipboard commands: %#v", got)
+	}
+	if got := clipboardCommands("windows"); len(got) != 1 || got[0].name != "clip" {
+		t.Fatalf("unexpected windows clipboard commands: %#v", got)
+	}
+	got := clipboardCommands("linux")
+	if len(got) < 3 || got[0].name != "wl-copy" || got[1].name != "xclip" || got[2].name != "xsel" {
+		t.Fatalf("unexpected linux clipboard commands: %#v", got)
+	}
+}
+
+func TestModelCopyItemIDUsesAvailableClipboardCommand(t *testing.T) {
+	dir := t.TempDir()
+	outputPath := filepath.Join(dir, "clipboard.txt")
+	candidates := clipboardCommands(runtime.GOOS)
+	if len(candidates) == 0 {
+		t.Fatal("expected at least one clipboard command candidate")
+	}
+	candidateName := candidates[0].name
+
+	m := newTestModel()
+	m.lookPath = func(file string) (string, error) {
+		if file == candidateName {
+			return file, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	m.command = func(name string, args ...string) *exec.Cmd {
+		if name != candidateName {
+			t.Fatalf("unexpected clipboard command %q", name)
+		}
+		return newClipboardHelperCommand(t, outputPath)
+	}
+
+	if err := m.copyItemID(m.items[0]); err != nil {
+		t.Fatalf("copyItemID() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "12" {
+		t.Fatalf("clipboard contents = %q, want %q", got, "12")
+	}
+}
+
+func TestModelCopyItemIDErrorListsAttemptedCommands(t *testing.T) {
+	m := newTestModel()
+	m.lookPath = func(string) (string, error) {
+		return "", exec.ErrNotFound
+	}
+
+	err := m.copyItemID(m.items[0])
+	if err == nil {
+		t.Fatal("expected copyItemID() error")
+	}
+	if !strings.Contains(err.Error(), runtime.GOOS) {
+		t.Fatalf("expected OS in error, got %q", err)
+	}
+	for _, name := range clipboardCommandNames(clipboardCommands(runtime.GOOS)) {
+		if !strings.Contains(err.Error(), name) {
+			t.Fatalf("expected %q in error, got %q", name, err)
+		}
+	}
+}
+
+func TestHelperProcessClipboard(t *testing.T) {
+	if os.Getenv("GO_WANT_CLIPBOARD_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "read stdin: %v", err)
+		os.Exit(1)
+	}
+	if err := os.WriteFile(os.Getenv("ROLLBAR_CLIPBOARD_OUTPUT"), data, 0o600); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "write output: %v", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func newClipboardHelperCommand(t *testing.T, outputPath string) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcessClipboard", "--")
+	cmd.Env = append(os.Environ(),
+		"GO_WANT_CLIPBOARD_HELPER_PROCESS=1",
+		"ROLLBAR_CLIPBOARD_OUTPUT="+outputPath,
+	)
+	return cmd
+}
+
 func newTestModel() model {
 	items := []rollbar.Item{{
 		ID:          12,
@@ -235,5 +336,10 @@ func newTestModel() model {
 			"12", "34", "error", "active", "production", "-", "something broke",
 		}}),
 	)
-	return model{table: tbl, items: items}
+	return model{
+		table:    tbl,
+		items:    items,
+		lookPath: exec.LookPath,
+		command:  exec.Command,
+	}
 }
