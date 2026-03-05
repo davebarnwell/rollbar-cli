@@ -4,7 +4,7 @@ A Go CLI for querying [Rollbar](https://rollbar.com), including item and occurre
 
 - [Cobra command framework](https://cobra.dev)
 - [Rollbar API](https://docs.rollbar.com/reference/getting-started-1) integration (`GET /api/1/items`)
-- JSON output mode
+- stable JSON and NDJSON output modes
 - [Charm-powered TUI](https://charm.land) table output mode
 
 ## Why?
@@ -77,6 +77,21 @@ Provide a Rollbar project token with `read` scope (or `read` and `write` if you 
 - flag: `--token`
 - or env var: `ROLLBAR_ACCESS_TOKEN`
 
+Optional config profiles are supported via `--config` / `--profile`, `ROLLBAR_CLI_CONFIG`, or `~/.config/rollbar-cli/config.json`:
+
+```json
+{
+  "default_profile": "prod",
+  "profiles": {
+    "prod": {
+      "token": "rbac_...",
+      "base_url": "https://api.rollbar.com",
+      "timeout": "15s"
+    }
+  }
+}
+```
+
 ## Install shell tab completion
 
 ```bash
@@ -112,10 +127,14 @@ if you installed locally then replace `rollbar-cli` with `./rollbar-cli` prefix.
 # text/TUI output
 rollbar-cli items list --status active --environment production
 
-# JSON output
+# stable JSON output
 rollbar-cli items list --json
-# or
-rollbar-cli items list --output json
+
+# raw Rollbar API JSON
+rollbar-cli items list --raw-json
+
+# NDJSON for scripting
+rollbar-cli items list --ndjson --limit 20
 
 # get a single item by numeric item ID
 rollbar-cli items get 275123456
@@ -127,14 +146,20 @@ rollbar-cli items get 01234567-89ab-cdef-0123-456789abcdef
 # or
 rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef
 
-# get item JSON
+# get item JSON (stable schema)
 rollbar-cli items get --id 275123456 --json
 
-# get item + instance details (stack frames, file/line, payload)
-rollbar-cli items get --id 275123456 --instances
+# get item + instance details with payload shaping
+rollbar-cli items get --id 275123456 --instances --payload summary --payload-section request
 
 # get item + instances JSON payloads
 rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --json
+
+# common task verbs
+rollbar-cli items resolve --id 275123456 --resolved-in-version aabbcc1
+rollbar-cli items mute --id 275123456
+rollbar-cli items assign --id 275123456 --assigned-user-id 321
+rollbar-cli items snooze --id 275123456 --duration 1h
 
 # update status + resolved version
 rollbar-cli items update --id 275123456 --status resolved --resolved-in-version aabbcc1
@@ -148,8 +173,11 @@ rollbar-cli items update --id 275123456 --clear-assigned-user --snooze-enabled t
 # update item JSON
 rollbar-cli items update --id 275123456 --status active --json
 
-# page and level filtering (repeat --level)
-rollbar-cli items list --page 2 --level error --level critical
+# page, time, and sort filtering (repeat --level)
+rollbar-cli items list --page 2 --pages 3 --level error --level critical --last 24h --sort counter_desc --limit 25
+
+# watch the list during incident triage
+rollbar-cli items watch --status active --environment production --interval 30s --count 10
 
 # list occurrences for an item
 rollbar-cli occurrences list --item-id 275123456
@@ -158,6 +186,9 @@ rollbar-cli occurrences list 275123456
 
 # list occurrences JSON payload
 rollbar-cli occurrences list --item-uuid 01234567-89ab-cdef-0123-456789abcdef --json
+
+# list occurrences in NDJSON
+rollbar-cli occurrences list --item-id 275123456 --ndjson
 
 # get one occurrence by numeric occurrence ID
 rollbar-cli occurrences get --id 501
@@ -177,3 +208,6 @@ rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 
 - Uses `X-Rollbar-Access-Token` header for auth.
 - Base API URL defaults to `https://api.rollbar.com` and can be overridden with `--base-url`.
+- `--json` emits normalized, stable CLI JSON; `--raw-json` preserves Rollbar API envelopes.
+- `items list` supports client-side `--since`, `--until`, `--last`, `--sort`, `--limit`, and `--pages`.
+- The item TUI now shows item IDs and supports `enter` to toggle a detail pane for the selected row.

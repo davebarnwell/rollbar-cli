@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
+
 	"rollbar-cli/internal/rollbar"
 )
 
@@ -43,7 +46,7 @@ func TestRenderItemsPlain(t *testing.T) {
 		Environment:             "production",
 		LastOccurrenceTimestamp: 1700000000,
 		Title:                   "something broke",
-	}})
+	}}, ItemListRenderOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +82,7 @@ func TestRenderItem(t *testing.T) {
 
 func TestRenderItemWithInstances(t *testing.T) {
 	out := captureStdout(t, func() {
-		_ = RenderItemWithInstances(
+		_ = RenderItemWithInstancesOptions(
 			rollbar.Item{ID: 77, Counter: 1, Title: "oops"},
 			[]rollbar.ItemInstance{
 				{
@@ -95,6 +98,9 @@ func TestRenderItemWithInstances(t *testing.T) {
 						"request": map[string]any{"url": "https://example.com/checkout"},
 					},
 				},
+			},
+			ItemDetailsRenderOptions{
+				Payload: PayloadRenderOptions{Mode: "full"},
 			},
 		)
 	})
@@ -135,7 +141,99 @@ func TestRenderItemWriteError(t *testing.T) {
 }
 
 func TestRenderItemsPlainWriteError(t *testing.T) {
-	if err := renderItemsPlain(failWriter{}, []rollbar.Item{{Counter: 1}}); err == nil {
+	if err := renderItemsPlain(failWriter{}, []rollbar.Item{{Counter: 1}}, ItemListRenderOptions{}); err == nil {
 		t.Fatalf("expected write error, got nil")
 	}
+}
+
+func TestModelToggleDetails(t *testing.T) {
+	m := newTestModel()
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	updated := next.(model)
+	if !updated.showDetails {
+		t.Fatalf("expected details to be visible")
+	}
+}
+
+func TestModelFetchOccurrences(t *testing.T) {
+	m := newTestModel()
+	m.interactions = &ItemListInteractions{
+		FetchOccurrences: func(item rollbar.Item) ([]rollbar.ItemInstance, error) {
+			return []rollbar.ItemInstance{{ID: 88, UUID: "occ-1"}}, nil
+		},
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := next.(model)
+	if !updated.showOccurrences {
+		t.Fatalf("expected occurrences panel to be visible")
+	}
+	if len(updated.occurrences) != 1 || updated.occurrences[0].UUID != "occ-1" {
+		t.Fatalf("unexpected occurrences: %#v", updated.occurrences)
+	}
+}
+
+func TestModelCopyAndResolveActions(t *testing.T) {
+	copied := false
+	m := newTestModel()
+	m.interactions = &ItemListInteractions{
+		CopyItemID: func(item rollbar.Item) error {
+			copied = true
+			return nil
+		},
+		ResolveItem: func(item rollbar.Item) (rollbar.Item, error) {
+			item.Status = "resolved"
+			return item, nil
+		},
+		MuteItem: func(item rollbar.Item) (rollbar.Item, error) {
+			item.Status = "muted"
+			return item, nil
+		},
+	}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated := next.(model)
+	if !copied {
+		t.Fatalf("expected copy callback to run")
+	}
+	if !strings.Contains(updated.statusMessage, "copied item id") {
+		t.Fatalf("unexpected copy status: %q", updated.statusMessage)
+	}
+
+	next, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	updated = next.(model)
+	if updated.items[0].Status != "resolved" {
+		t.Fatalf("expected resolved status, got %#v", updated.items[0])
+	}
+
+	next, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	updated = next.(model)
+	if updated.items[0].Status != "muted" {
+		t.Fatalf("expected muted status, got %#v", updated.items[0])
+	}
+}
+
+func newTestModel() model {
+	items := []rollbar.Item{{
+		ID:          12,
+		Counter:     34,
+		Status:      "active",
+		Level:       "error",
+		Environment: "production",
+		Title:       "something broke",
+	}}
+	tbl := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "ID", Width: 10},
+			{Title: "Counter", Width: 9},
+			{Title: "Level", Width: 8},
+			{Title: "Status", Width: 10},
+			{Title: "Environment", Width: 14},
+			{Title: "Last Seen", Width: 19},
+			{Title: "Title", Width: 56},
+		}),
+		table.WithRows([]table.Row{{
+			"12", "34", "error", "active", "production", "-", "something broke",
+		}}),
+	)
+	return model{table: tbl, items: items}
 }

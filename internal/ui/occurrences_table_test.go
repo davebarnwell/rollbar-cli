@@ -17,7 +17,7 @@ func TestRenderOccurrencesPlain(t *testing.T) {
 		Environment: "production",
 		Timestamp:   1700000000,
 		StackFrames: []rollbar.StackFrame{{Filename: "app/main.go"}},
-	}})
+	}}, OccurrenceRenderOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestRenderOccurrence(t *testing.T) {
 }
 
 func TestRenderOccurrencesPlainWriteError(t *testing.T) {
-	if err := renderOccurrencesPlain(failWriter{}, []rollbar.ItemInstance{{ID: 1}}); err == nil {
+	if err := renderOccurrencesPlain(failWriter{}, []rollbar.ItemInstance{{ID: 1}}, OccurrenceRenderOptions{}); err == nil {
 		t.Fatalf("expected write error, got nil")
 	}
 }

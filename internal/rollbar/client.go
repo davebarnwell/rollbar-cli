@@ -98,6 +98,98 @@ type listItemInstancesResult struct {
 	Instances []json.RawMessage `json:"instances"`
 }
 
+type apiResponse struct {
+	Raw      map[string]any
+	Envelope apiEnvelope
+}
+
+func (c *Client) doJSON(ctx context.Context, method string, path string, query url.Values, payload any) (*apiResponse, error) {
+	endpoint, err := url.Parse(c.baseURL + path)
+	if err != nil {
+		return nil, fmt.Errorf("build request URL: %w", err)
+	}
+	if len(query) > 0 {
+		endpoint.RawQuery = query.Encode()
+	}
+
+	var body io.Reader
+	if payload != nil {
+		rawPayload, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request body: %w", err)
+		}
+		body = bytes.NewReader(rawPayload)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("X-Rollbar-Access-Token", c.accessToken)
+	req.Header.Set("Accept", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	res, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	responseBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return nil, fmt.Errorf("rollbar API error: status=%d body=%s", res.StatusCode, formatErrorBody(responseBody))
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(responseBody, &raw); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	var env apiEnvelope
+	if err := json.Unmarshal(responseBody, &env); err != nil {
+		return nil, fmt.Errorf("parse envelope: %w", err)
+	}
+	if env.Err != 0 {
+		if env.Message == "" {
+			env.Message = "unknown error"
+		}
+		return nil, fmt.Errorf("rollbar API returned err=%d: %s", env.Err, env.Message)
+	}
+
+	return &apiResponse{
+		Raw:      raw,
+		Envelope: env,
+	}, nil
+}
+
+func formatErrorBody(body []byte) string {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return "<empty>"
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		if msg, ok := parsed["message"].(string); ok && strings.TrimSpace(msg) != "" {
+			return truncateString(strings.TrimSpace(msg), 200)
+		}
+	}
+	return truncateString(trimmed, 200)
+}
+
+func truncateString(v string, max int) string {
+	if max <= 0 || len(v) <= max {
+		return v
+	}
+	return v[:max] + "..."
+}
+
 func NewClient(cfg Config) *Client {
 	baseURL := strings.TrimSuffix(cfg.BaseURL, "/")
 	if baseURL == "" {
@@ -119,12 +211,7 @@ func (c *Client) ListItems(ctx context.Context, opts ListItemsOptions) (*ListIte
 		return nil, fmt.Errorf("missing access token")
 	}
 
-	endpoint, err := url.Parse(c.baseURL + "/api/1/items")
-	if err != nil {
-		return nil, fmt.Errorf("build request URL: %w", err)
-	}
-
-	query := endpoint.Query()
+	query := url.Values{}
 	if opts.Page > 0 {
 		query.Set("page", strconv.Itoa(opts.Page))
 	}
@@ -139,59 +226,28 @@ func (c *Client) ListItems(ctx context.Context, opts ListItemsOptions) (*ListIte
 			query.Add("level", level)
 		}
 	}
-	endpoint.RawQuery = query.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/items", query, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("X-Rollbar-Access-Token", c.accessToken)
-	req.Header.Set("Accept", "application/json")
-
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("rollbar API error: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	var env apiEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, fmt.Errorf("parse envelope: %w", err)
-	}
-	if env.Err != 0 {
-		if env.Message == "" {
-			env.Message = "unknown error"
-		}
-		return nil, fmt.Errorf("rollbar API returned err=%d: %s", env.Err, env.Message)
+		return nil, err
 	}
 
 	var result listItemsResult
-	if len(env.Result) > 0 {
-		if err := json.Unmarshal(env.Result, &result); err != nil {
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
 			return nil, fmt.Errorf("parse result.items: %w", err)
 		}
 	}
 
 	items := make([]Item, 0, len(result.Items))
-	for _, rawItem := range result.Items {
-		items = append(items, normalizeItem(rawItem))
+	for idx, rawItem := range result.Items {
+		item, err := normalizeItem(rawItem)
+		if err != nil {
+			return nil, fmt.Errorf("decode item %d: %w", idx, err)
+		}
+		items = append(items, item)
 	}
 
-	return &ListItemsResponse{Items: items, Raw: raw}, nil
+	return &ListItemsResponse{Items: items, Raw: resp.Raw}, nil
 }
 
 func (c *Client) GetItemByID(ctx context.Context, id int64) (*GetItemResponse, error) {
@@ -218,75 +274,45 @@ func (c *Client) ListItemInstances(ctx context.Context, identifier string, page 
 		return nil, fmt.Errorf("missing access token")
 	}
 
-	endpoint, err := url.Parse(c.baseURL + "/api/1/item/" + url.PathEscape(identifier) + "/instances")
-	if err != nil {
-		return nil, fmt.Errorf("build request URL: %w", err)
-	}
+	query := url.Values{}
 	if page > 0 {
-		query := endpoint.Query()
 		query.Set("page", strconv.Itoa(page))
-		endpoint.RawQuery = query.Encode()
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/item/"+url.PathEscape(identifier)+"/instances", query, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("X-Rollbar-Access-Token", c.accessToken)
-	req.Header.Set("Accept", "application/json")
-
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("rollbar API error: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	var env apiEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, fmt.Errorf("parse envelope: %w", err)
-	}
-	if env.Err != 0 {
-		if env.Message == "" {
-			env.Message = "unknown error"
-		}
-		return nil, fmt.Errorf("rollbar API returned err=%d: %s", env.Err, env.Message)
+		return nil, err
 	}
 
 	var result listItemInstancesResult
-	if len(env.Result) > 0 {
-		if err := json.Unmarshal(env.Result, &result); err != nil {
-			return nil, fmt.Errorf("parse result.instances: %w", err)
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
+			var directInstances []json.RawMessage
+			if directErr := json.Unmarshal(resp.Envelope.Result, &directInstances); directErr == nil {
+				result.Instances = directInstances
+			} else {
+				return nil, fmt.Errorf("parse result.instances: %w", err)
+			}
 		}
 		if len(result.Instances) == 0 {
 			var directInstances []json.RawMessage
-			if err := json.Unmarshal(env.Result, &directInstances); err == nil {
+			if err := json.Unmarshal(resp.Envelope.Result, &directInstances); err == nil {
 				result.Instances = directInstances
 			}
 		}
 	}
 
 	instances := make([]ItemInstance, 0, len(result.Instances))
-	for _, rawInstance := range result.Instances {
-		instances = append(instances, normalizeInstance(rawInstance))
+	for idx, rawInstance := range result.Instances {
+		instance, err := normalizeInstance(rawInstance)
+		if err != nil {
+			return nil, fmt.Errorf("decode instance %d: %w", idx, err)
+		}
+		instances = append(instances, instance)
 	}
 
 	return &ListItemInstancesResponse{
 		Instances: instances,
-		Raw:       raw,
+		Raw:       resp.Raw,
 	}, nil
 }
 
@@ -316,58 +342,14 @@ func (c *Client) UpdateItemByID(ctx context.Context, id int64, body map[string]a
 		return nil, fmt.Errorf("missing access token")
 	}
 
-	endpoint, err := url.Parse(c.baseURL + "/api/1/item/" + strconv.FormatInt(id, 10))
+	resp, err := c.doJSON(ctx, http.MethodPatch, "/api/1/item/"+strconv.FormatInt(id, 10), nil, body)
 	if err != nil {
-		return nil, fmt.Errorf("build request URL: %w", err)
-	}
-
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request body: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint.String(), bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("X-Rollbar-Access-Token", c.accessToken)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	responseBody, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("rollbar API error: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(responseBody)))
-	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(responseBody, &raw); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	var env apiEnvelope
-	if err := json.Unmarshal(responseBody, &env); err != nil {
-		return nil, fmt.Errorf("parse envelope: %w", err)
-	}
-	if env.Err != 0 {
-		if env.Message == "" {
-			env.Message = "unknown error"
-		}
-		return nil, fmt.Errorf("rollbar API returned err=%d: %s", env.Err, env.Message)
+		return nil, err
 	}
 
 	var result map[string]any
-	if len(env.Result) > 0 {
-		if err := json.Unmarshal(env.Result, &result); err != nil {
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
 			return nil, fmt.Errorf("parse result: %w", err)
 		}
 	}
@@ -381,7 +363,7 @@ func (c *Client) UpdateItemByID(ctx context.Context, id int64, body map[string]a
 
 	return &UpdateItemResponse{
 		Item: normalizeItemMap(itemData),
-		Raw:  raw,
+		Raw:  resp.Raw,
 	}, nil
 }
 
@@ -389,53 +371,14 @@ func (c *Client) getItem(ctx context.Context, identifier string) (*GetItemRespon
 	if c.accessToken == "" {
 		return nil, fmt.Errorf("missing access token")
 	}
-
-	endpoint, err := url.Parse(c.baseURL + "/api/1/item/" + url.PathEscape(identifier))
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/item/"+url.PathEscape(identifier), nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build request URL: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("X-Rollbar-Access-Token", c.accessToken)
-	req.Header.Set("Accept", "application/json")
-
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("rollbar API error: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	var env apiEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, fmt.Errorf("parse envelope: %w", err)
-	}
-	if env.Err != 0 {
-		if env.Message == "" {
-			env.Message = "unknown error"
-		}
-		return nil, fmt.Errorf("rollbar API returned err=%d: %s", env.Err, env.Message)
+		return nil, err
 	}
 
 	var result map[string]any
-	if len(env.Result) > 0 {
-		if err := json.Unmarshal(env.Result, &result); err != nil {
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
 			return nil, fmt.Errorf("parse item result: %w", err)
 		}
 	}
@@ -448,60 +391,21 @@ func (c *Client) getItem(ctx context.Context, identifier string) (*GetItemRespon
 	}
 
 	item := normalizeItemMap(itemData)
-	return &GetItemResponse{Item: item, Raw: raw}, nil
+	return &GetItemResponse{Item: item, Raw: resp.Raw}, nil
 }
 
 func (c *Client) getOccurrence(ctx context.Context, identifier string) (*GetOccurrenceResponse, error) {
 	if c.accessToken == "" {
 		return nil, fmt.Errorf("missing access token")
 	}
-
-	endpoint, err := url.Parse(c.baseURL + "/api/1/instance/" + url.PathEscape(identifier))
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/instance/"+url.PathEscape(identifier), nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build request URL: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("X-Rollbar-Access-Token", c.accessToken)
-	req.Header.Set("Accept", "application/json")
-
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("rollbar API error: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	var env apiEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, fmt.Errorf("parse envelope: %w", err)
-	}
-	if env.Err != 0 {
-		if env.Message == "" {
-			env.Message = "unknown error"
-		}
-		return nil, fmt.Errorf("rollbar API returned err=%d: %s", env.Err, env.Message)
+		return nil, err
 	}
 
 	var result map[string]any
-	if len(env.Result) > 0 {
-		if err := json.Unmarshal(env.Result, &result); err != nil {
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
 			return nil, fmt.Errorf("parse occurrence result: %w", err)
 		}
 	}
@@ -515,17 +419,17 @@ func (c *Client) getOccurrence(ctx context.Context, identifier string) (*GetOccu
 
 	return &GetOccurrenceResponse{
 		Occurrence: normalizeInstanceMap(occurrenceData),
-		Raw:        raw,
+		Raw:        resp.Raw,
 	}, nil
 }
 
-func normalizeItem(rawItem json.RawMessage) Item {
+func normalizeItem(rawItem json.RawMessage) (Item, error) {
 	var m map[string]any
 	if err := json.Unmarshal(rawItem, &m); err != nil {
-		return Item{}
+		return Item{}, err
 	}
 
-	return normalizeItemMap(m)
+	return normalizeItemMap(m), nil
 }
 
 func normalizeItemMap(m map[string]any) Item {
@@ -534,7 +438,7 @@ func normalizeItemMap(m map[string]any) Item {
 	}
 
 	item := Item{
-		ID:                      getInt64(m, "id"),
+		ID:                      firstInt64(m, "id", "item_id"),
 		Counter:                 getInt64(m, "counter"),
 		Title:                   getString(m, "title"),
 		Level:                   getString(m, "level"),
@@ -560,12 +464,12 @@ func normalizeItemMap(m map[string]any) Item {
 	return item
 }
 
-func normalizeInstance(rawInstance json.RawMessage) ItemInstance {
+func normalizeInstance(rawInstance json.RawMessage) (ItemInstance, error) {
 	var m map[string]any
 	if err := json.Unmarshal(rawInstance, &m); err != nil {
-		return ItemInstance{}
+		return ItemInstance{}, err
 	}
-	return normalizeInstanceMap(m)
+	return normalizeInstanceMap(m), nil
 }
 
 func normalizeInstanceMap(m map[string]any) ItemInstance {
@@ -574,7 +478,7 @@ func normalizeInstanceMap(m map[string]any) ItemInstance {
 	}
 
 	instance := ItemInstance{
-		ID:          getInt64(m, "id"),
+		ID:          firstInt64(m, "id", "instance_id"),
 		UUID:        getString(m, "uuid"),
 		Level:       getString(m, "level"),
 		Environment: getString(m, "environment"),
@@ -582,12 +486,28 @@ func normalizeInstanceMap(m map[string]any) ItemInstance {
 		StackFrames: extractStackFrames(m),
 		Payload:     extractPayload(m),
 	}
+	if instance.UUID == "" {
+		instance.UUID = getString(m, "data", "uuid")
+	}
+	if instance.Level == "" {
+		instance.Level = getString(m, "data", "level")
+	}
+	if instance.Environment == "" {
+		instance.Environment = getString(m, "data", "environment")
+	}
+	if instance.Timestamp == 0 {
+		instance.Timestamp = getInt64(m, "data", "timestamp")
+	}
 
 	return instance
 }
 
 func extractStackFrames(instance map[string]any) []StackFrame {
 	body, ok := instance["body"].(map[string]any)
+	if !ok {
+		body = getMap(instance, "data", "body")
+		ok = body != nil
+	}
 	if !ok {
 		return nil
 	}
@@ -682,6 +602,10 @@ func firstInt64(data map[string]any, keys ...string) int64 {
 				if n, err := t.Int64(); err == nil && n != 0 {
 					return n
 				}
+			case string:
+				if n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64); err == nil && n != 0 {
+					return n
+				}
 			}
 		}
 	}
@@ -716,6 +640,9 @@ func getInt64(data map[string]any, path ...string) int64 {
 	case json.Number:
 		n, _ := t.Int64()
 		return n
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		return n
 	default:
 		return 0
 	}
@@ -734,4 +661,16 @@ func walk(data map[string]any, path ...string) (any, bool) {
 		}
 	}
 	return cur, true
+}
+
+func getMap(data map[string]any, path ...string) map[string]any {
+	v, ok := walk(data, path...)
+	if !ok || v == nil {
+		return nil
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return m
 }
