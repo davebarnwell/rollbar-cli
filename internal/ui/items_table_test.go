@@ -43,7 +43,7 @@ func TestRenderItemsPlain(t *testing.T) {
 		Environment:             "production",
 		LastOccurrenceTimestamp: 1700000000,
 		Title:                   "something broke",
-	}})
+	}}, ItemListRenderOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRenderItem(t *testing.T) {
 
 func TestRenderItemWithInstances(t *testing.T) {
 	out := captureStdout(t, func() {
-		_ = RenderItemWithInstances(
+		_ = RenderItemWithInstancesOptions(
 			rollbar.Item{ID: 77, Counter: 1, Title: "oops"},
 			[]rollbar.ItemInstance{
 				{
@@ -95,6 +95,9 @@ func TestRenderItemWithInstances(t *testing.T) {
 						"request": map[string]any{"url": "https://example.com/checkout"},
 					},
 				},
+			},
+			ItemDetailsRenderOptions{
+				Payload: PayloadRenderOptions{Mode: "full"},
 			},
 		)
 	})
@@ -135,7 +138,7 @@ func TestRenderItemWriteError(t *testing.T) {
 }
 
 func TestRenderItemsPlainWriteError(t *testing.T) {
-	if err := renderItemsPlain(failWriter{}, []rollbar.Item{{Counter: 1}}); err == nil {
+	if err := renderItemsPlain(failWriter{}, []rollbar.Item{{Counter: 1}}, ItemListRenderOptions{}); err == nil {
 		t.Fatalf("expected write error, got nil")
 	}
 }

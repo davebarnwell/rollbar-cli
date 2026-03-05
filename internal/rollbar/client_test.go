@@ -192,10 +192,41 @@ func TestListItemInstances(t *testing.T) {
 	}
 }
 
+func TestListItemInstancesDirectArrayAndTraceChain(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"err":0,"result":[{"id":501,"uuid":"inst-1","timestamp":1700001000,"body":{"trace_chain":[{"frames":[{"filename":"app/main.go","lineno":42,"method":"handler"},{"filename":"worker.go","lineno":7,"method":"run"}]}]}}]}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListItemInstances(context.Background(), "42", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Instances) != 1 {
+		t.Fatalf("expected one instance, got %d", len(resp.Instances))
+	}
+	if len(resp.Instances[0].StackFrames) != 2 {
+		t.Fatalf("expected two trace_chain frames, got %#v", resp.Instances[0].StackFrames)
+	}
+}
+
 func TestListItemInstancesValidation(t *testing.T) {
 	client := NewClient(Config{AccessToken: "tok", BaseURL: "https://api.rollbar.com"})
 	if _, err := client.ListItemInstances(context.Background(), "  ", 1); err == nil {
 		t.Fatalf("expected empty identifier error")
+	}
+}
+
+func TestListItemsDecodeError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"err":0,"result":{"items":["bad"]}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	if _, err := client.ListItems(context.Background(), ListItemsOptions{}); err == nil || !strings.Contains(err.Error(), "decode item 0") {
+		t.Fatalf("expected decode error, got %v", err)
 	}
 }
 
@@ -334,5 +365,28 @@ func TestUpdateItemByIDErrorCases(t *testing.T) {
 	client = NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
 	if _, err := client.UpdateItemByID(context.Background(), 1, map[string]any{"status": "active"}); err == nil || !strings.Contains(err.Error(), "status=500") {
 		t.Fatalf("expected non-2xx error, got %v", err)
+	}
+
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"err":1,"message":"update failed"}`))
+	}))
+	defer ts.Close()
+
+	client = NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	if _, err := client.UpdateItemByID(context.Background(), 1, map[string]any{"status": "active"}); err == nil || !strings.Contains(err.Error(), "update failed") {
+		t.Fatalf("expected envelope error, got %v", err)
+	}
+}
+
+func TestFormatErrorBodyTruncatesAndPrefersMessage(t *testing.T) {
+	got := formatErrorBody([]byte(`{"message":"this is a structured error message"}`))
+	if got != "this is a structured error message" {
+		t.Fatalf("unexpected structured message: %q", got)
+	}
+
+	long := strings.Repeat("a", 400)
+	got = formatErrorBody([]byte(long))
+	if len(got) > 203 || !strings.HasSuffix(got, "...") {
+		t.Fatalf("expected truncated body, got %q", got)
 	}
 }

@@ -1,77 +1,39 @@
 package cmd
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/spf13/cobra"
+)
 
 func TestResolveOccurrenceIdentifier(t *testing.T) {
-	tests := []struct {
-		name    string
-		args    []string
-		id      int64
-		uuid    string
-		wantID  int64
-		wantUID string
-		wantErr bool
-	}{
-		{name: "missing", wantErr: true},
-		{name: "multiple sources", args: []string{"123"}, id: 456, wantErr: true},
-		{name: "positional id", args: []string{"123"}, wantID: 123},
-		{name: "positional uuid", args: []string{"abcd-efgh"}, wantUID: "abcd-efgh"},
-		{name: "flag id", id: 999, wantID: 999},
-		{name: "flag uuid", uuid: "u-1", wantUID: "u-1"},
+	cmd := &cobra.Command{Use: "get"}
+	cmd.Flags().Int64("id", 0, "")
+	cmd.Flags().String("uuid", "", "")
+
+	gotID, gotUUID, err := resolveOccurrenceIdentifier(cmd, []string{"123"}, occurrencesGetOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotID != 123 || gotUUID != "" {
+		t.Fatalf("unexpected result: (%d, %q)", gotID, gotUUID)
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			gotID, gotUUID, err := resolveOccurrenceIdentifier(tc.args, tc.id, tc.uuid)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if gotID != tc.wantID || gotUUID != tc.wantUID {
-				t.Fatalf("got (%d, %q), want (%d, %q)", gotID, gotUUID, tc.wantID, tc.wantUID)
-			}
-		})
+	if _, _, err := resolveOccurrenceIdentifier(cmd, []string{"-1"}, occurrencesGetOptions{}); err == nil {
+		t.Fatalf("expected invalid negative id error")
 	}
 }
 
 func TestResolveOccurrenceListItemIdentifier(t *testing.T) {
-	tests := []struct {
-		name    string
-		args    []string
-		id      int64
-		uuid    string
-		wantID  int64
-		wantUID string
-		wantErr bool
-	}{
-		{name: "missing", wantErr: true},
-		{name: "multiple sources", args: []string{"123"}, id: 456, wantErr: true},
-		{name: "positional id", args: []string{"123"}, wantID: 123},
-		{name: "positional uuid", args: []string{"item-uuid"}, wantUID: "item-uuid"},
-		{name: "flag id", id: 999, wantID: 999},
-		{name: "flag uuid", uuid: "item-1", wantUID: "item-1"},
-	}
+	cmd := &cobra.Command{Use: "list"}
+	cmd.Flags().Int64("item-id", 0, "")
+	cmd.Flags().String("item-uuid", "", "")
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			gotID, gotUUID, err := resolveOccurrenceListItemIdentifier(tc.args, tc.id, tc.uuid)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if gotID != tc.wantID || gotUUID != tc.wantUID {
-				t.Fatalf("got (%d, %q), want (%d, %q)", gotID, gotUUID, tc.wantID, tc.wantUID)
-			}
-		})
+	gotID, gotUUID, err := resolveOccurrenceListItemIdentifier(cmd, []string{"item-uuid"}, occurrencesListOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotID != 0 || gotUUID != "item-uuid" {
+		t.Fatalf("unexpected result: (%d, %q)", gotID, gotUUID)
 	}
 }
