@@ -486,12 +486,28 @@ func normalizeInstanceMap(m map[string]any) ItemInstance {
 		StackFrames: extractStackFrames(m),
 		Payload:     extractPayload(m),
 	}
+	if instance.UUID == "" {
+		instance.UUID = getString(m, "data", "uuid")
+	}
+	if instance.Level == "" {
+		instance.Level = getString(m, "data", "level")
+	}
+	if instance.Environment == "" {
+		instance.Environment = getString(m, "data", "environment")
+	}
+	if instance.Timestamp == 0 {
+		instance.Timestamp = getInt64(m, "data", "timestamp")
+	}
 
 	return instance
 }
 
 func extractStackFrames(instance map[string]any) []StackFrame {
 	body, ok := instance["body"].(map[string]any)
+	if !ok {
+		body = getMap(instance, "data", "body")
+		ok = body != nil
+	}
 	if !ok {
 		return nil
 	}
@@ -645,4 +661,16 @@ func walk(data map[string]any, path ...string) (any, bool) {
 		}
 	}
 	return cur, true
+}
+
+func getMap(data map[string]any, path ...string) map[string]any {
+	v, ok := walk(data, path...)
+	if !ok || v == nil {
+		return nil
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return m
 }

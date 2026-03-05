@@ -234,6 +234,29 @@ func TestListItemInstancesDirectArrayAndTraceChain(t *testing.T) {
 	}
 }
 
+func TestListItemInstancesUsesNestedDataFields(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"err":0,"result":{"instances":[{"id":455732314098,"timestamp":1772663384,"data":{"uuid":"b0182d40-9e68-4f83-9cac-d909c85073c2","level":"warning","environment":"production","timestamp":1772663384}}]}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListItemInstances(context.Background(), "42", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Instances) != 1 {
+		t.Fatalf("expected one instance, got %d", len(resp.Instances))
+	}
+	instance := resp.Instances[0]
+	if instance.UUID != "b0182d40-9e68-4f83-9cac-d909c85073c2" {
+		t.Fatalf("expected nested uuid, got %#v", instance)
+	}
+	if instance.Level != "warning" || instance.Environment != "production" {
+		t.Fatalf("expected nested level/environment, got %#v", instance)
+	}
+}
+
 func TestListItemInstancesValidation(t *testing.T) {
 	client := NewClient(Config{AccessToken: "tok", BaseURL: "https://api.rollbar.com"})
 	if _, err := client.ListItemInstances(context.Background(), "  ", 1); err == nil {
