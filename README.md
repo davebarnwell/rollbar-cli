@@ -9,9 +9,13 @@ A Go CLI for querying [Rollbar](https://rollbar.com), including item and occurre
 
 ## Why?
 
-Primarily because I wanted to build an AI skill to allow AI interaction with Rollbar via prompts such as
-"Find all unresolved rollbar errors from the last 24 hours and create fixes with associated PRs".
-The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and deployments.
+Primarily because I wanted to build an AI Agent Skill to allow AI interaction with Rollbar via prompts such as
+
+> Find all unresolved rollbar errors from the last 24 hours and create fixes with associated PRs
+
+When combined with an appropriate GitHub Skill to create PRs etc..
+ 
+NOTE: The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and deployments.
 
 ## Build
 
