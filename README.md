@@ -2,10 +2,10 @@
 
 A Go CLI for querying [Rollbar](https://rollbar.com), including item and occurrence workflows, with:
 
-- Cobra command framework
-- Rollbar API integration (`GET /api/1/items`)
+- [Cobra command framework](https://cobra.dev)
+- [Rollbar API](https://docs.rollbar.com/reference/getting-started-1) integration (`GET /api/1/items`)
 - JSON output mode
-- Charm-powered TUI table output mode
+- [Charm-powered TUI](https://charm.land) table output mode
 
 ## Why?
 
@@ -16,8 +16,6 @@ Primarily because I wanted to build an AI Agent Skill to allow AI interaction wi
 When combined with an appropriate GitHub Skill to create PRs etc..
  
 NOTE: The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and deployments.
-
-The Official [Rollbar API docs](https://docs.rollbar.com/reference/getting-started-1).
 
 ## Build
 
