@@ -1,6 +1,6 @@
 # rollbar-cli
 
-A Go CLI for querying [Rollbar](https://rollbar.com), initially just items, with:
+A Go CLI for querying [Rollbar](https://rollbar.com), including item and occurrence workflows, with:
 
 - Cobra command framework
 - Rollbar API integration (`GET /api/1/items`)
@@ -117,6 +117,27 @@ rollbar-cli items update --id 275123456 --status active --json
 
 # page and level filtering (repeat --level)
 rollbar-cli items list --page 2 --level error --level critical
+
+# list occurrences for an item
+rollbar-cli occurrences list --item-id 275123456
+# or
+rollbar-cli occurrences list 275123456
+
+# list occurrences JSON payload
+rollbar-cli occurrences list --item-uuid 01234567-89ab-cdef-0123-456789abcdef --json
+
+# get one occurrence by numeric occurrence ID
+rollbar-cli occurrences get --id 501
+# or
+rollbar-cli occurrences get 501
+
+# get one occurrence by UUID
+rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567
+# alias spelling also works
+rollbar-cli occurences get --uuid 89abcdef-0123-4567-89ab-cdef01234567
+
+# get one occurrence JSON
+rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 ```
 
 ## Notes

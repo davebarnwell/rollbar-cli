@@ -17,6 +17,7 @@ Use this skill to quickly find and triage Rollbar issues with `rollbar-cli`.
 - You need a fast view of current active issues.
 - You want recent issues in JSON for automation or triage notes.
 - You want to narrow by environment and severity level.
+- You need to inspect raw occurrences for a specific item or fetch one occurrence directly.
 
 ## Prerequisites
 
@@ -105,6 +106,33 @@ rollbar-cli items update --id 275123456 \
   --json
 ```
 
+### 9) List occurrences for an item
+
+```bash
+# by item id
+rollbar-cli occurrences list --item-id 275123456 --json
+# or positional id-or-uuid
+rollbar-cli occurrences list 275123456 --json
+
+# by item uuid
+rollbar-cli occurrences list --item-uuid 01234567-89ab-cdef-0123-456789abcdef --json
+```
+
+### 10) Get one occurrence by ID or UUID
+
+```bash
+# by occurrence id
+rollbar-cli occurrences get --id 501 --json
+# or positional id-or-uuid
+rollbar-cli occurrences get 501 --json
+
+# by occurrence uuid
+rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
+
+# supported alias spelling
+rollbar-cli occurences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
+```
+
 ## Optional: Show Top N Most Recent With `jq`
 
 ```bash
@@ -119,13 +147,16 @@ rollbar-cli items list --status active --json \
 
 1. Start with production + `error`/`critical`.
 2. Open top counters/IDs with `rollbar-cli items get` and include `--instances` for stack context.
-3. Update state/assignment using `rollbar-cli items update` when triaged.
+3. Use `rollbar-cli occurrences list` when you want to inspect occurrence-level payloads for an item.
+4. Update state/assignment using `rollbar-cli items update` when triaged.
 
 ## Example Follow-up Commands
 
 ```bash
 rollbar-cli items get --id 275123456 --json
 rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --json
+rollbar-cli occurrences list --item-id 275123456 --json
+rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 rollbar-cli items update --id 275123456 --status resolved --resolved-in-version aabbcc1
 rollbar-cli items update --uuid 01234567-89ab-cdef-0123-456789abcdef --level error --title "Checkout failure"
 ```
