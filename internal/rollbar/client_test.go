@@ -199,6 +199,79 @@ func TestListItemInstancesValidation(t *testing.T) {
 	}
 }
 
+func TestGetOccurrenceByIDAndUUID(t *testing.T) {
+	var lastPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"err":0,"result":{"instance":{"id":501,"uuid":"inst-1","timestamp":1700001000,"level":"error","environment":"production"}}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+
+	byID, err := client.GetOccurrenceByID(context.Background(), 501)
+	if err != nil {
+		t.Fatalf("unexpected get-by-id error: %v", err)
+	}
+	if lastPath != "/api/1/instance/501" {
+		t.Fatalf("unexpected path for get-by-id: %s", lastPath)
+	}
+	if byID.Occurrence.ID != 501 || byID.Occurrence.UUID != "inst-1" {
+		t.Fatalf("unexpected occurrence from get-by-id: %#v", byID.Occurrence)
+	}
+
+	byUUID, err := client.GetOccurrenceByUUID(context.Background(), "inst-1")
+	if err != nil {
+		t.Fatalf("unexpected get-by-uuid error: %v", err)
+	}
+	if lastPath != "/api/1/instance/inst-1" {
+		t.Fatalf("unexpected path for get-by-uuid: %s", lastPath)
+	}
+	if byUUID.Occurrence.ID != 501 || byUUID.Occurrence.UUID != "inst-1" {
+		t.Fatalf("unexpected occurrence from get-by-uuid: %#v", byUUID.Occurrence)
+	}
+
+	if _, err := client.GetOccurrenceByID(context.Background(), 0); err == nil {
+		t.Fatalf("expected empty-id error")
+	}
+	if _, err := client.GetOccurrenceByUUID(context.Background(), "   "); err == nil {
+		t.Fatalf("expected empty-uuid error")
+	}
+}
+
+func TestGetOccurrenceErrorCases(t *testing.T) {
+	t.Run("missing token", func(t *testing.T) {
+		client := NewClient(Config{BaseURL: "https://api.rollbar.com"})
+		if _, err := client.GetOccurrenceByID(context.Background(), 123); err == nil {
+			t.Fatalf("expected missing token error")
+		}
+	})
+
+	t.Run("non-2xx", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusBadGateway)
+		}))
+		defer ts.Close()
+
+		client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+		if _, err := client.GetOccurrenceByID(context.Background(), 123); err == nil || !strings.Contains(err.Error(), "status=502") {
+			t.Fatalf("expected non-2xx error, got %v", err)
+		}
+	})
+
+	t.Run("envelope err", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"err":1,"message":"nope"}`))
+		}))
+		defer ts.Close()
+
+		client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+		if _, err := client.GetOccurrenceByID(context.Background(), 123); err == nil || !strings.Contains(err.Error(), "err=1") {
+			t.Fatalf("expected envelope error, got %v", err)
+		}
+	})
+}
+
 func TestUpdateItemByID(t *testing.T) {
 	var gotMethod string
 	var gotPath string
