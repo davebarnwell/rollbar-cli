@@ -438,7 +438,7 @@ func normalizeItemMap(m map[string]any) Item {
 	}
 
 	item := Item{
-		ID:                      getInt64(m, "id"),
+		ID:                      firstInt64(m, "id", "item_id"),
 		Counter:                 getInt64(m, "counter"),
 		Title:                   getString(m, "title"),
 		Level:                   getString(m, "level"),
@@ -478,7 +478,7 @@ func normalizeInstanceMap(m map[string]any) ItemInstance {
 	}
 
 	instance := ItemInstance{
-		ID:          getInt64(m, "id"),
+		ID:          firstInt64(m, "id", "instance_id"),
 		UUID:        getString(m, "uuid"),
 		Level:       getString(m, "level"),
 		Environment: getString(m, "environment"),
@@ -586,6 +586,10 @@ func firstInt64(data map[string]any, keys ...string) int64 {
 				if n, err := t.Int64(); err == nil && n != 0 {
 					return n
 				}
+			case string:
+				if n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64); err == nil && n != 0 {
+					return n
+				}
 			}
 		}
 	}
@@ -619,6 +623,9 @@ func getInt64(data map[string]any, path ...string) int64 {
 		return int64(t)
 	case json.Number:
 		n, _ := t.Int64()
+		return n
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
 		return n
 	default:
 		return 0

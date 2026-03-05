@@ -79,6 +79,29 @@ func TestListItemsSuccess(t *testing.T) {
 	}
 }
 
+func TestListItemsParsesStringID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"err":0,"result":{"items":[{"id":"456","counter":10,"title":"boom","level":"warning","status":"active","environment":"production","last_occurrence_timestamp":"1700000000"}]}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListItems(context.Background(), ListItemsOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected one item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].ID != 456 {
+		t.Fatalf("expected parsed string id, got %#v", resp.Items[0])
+	}
+	if resp.Items[0].LastOccurrenceTimestamp != 1700000000 {
+		t.Fatalf("expected parsed string timestamp, got %#v", resp.Items[0])
+	}
+}
+
 func TestListItemsErrorCases(t *testing.T) {
 	t.Run("missing token", func(t *testing.T) {
 		client := NewClient(Config{BaseURL: "https://api.rollbar.com"})
