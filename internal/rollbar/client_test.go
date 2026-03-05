@@ -239,6 +239,39 @@ func TestGetOccurrenceByIDAndUUID(t *testing.T) {
 	}
 }
 
+func TestGetOccurrenceErrorCases(t *testing.T) {
+	t.Run("missing token", func(t *testing.T) {
+		client := NewClient(Config{BaseURL: "https://api.rollbar.com"})
+		if _, err := client.GetOccurrenceByID(context.Background(), 123); err == nil {
+			t.Fatalf("expected missing token error")
+		}
+	})
+
+	t.Run("non-2xx", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusBadGateway)
+		}))
+		defer ts.Close()
+
+		client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+		if _, err := client.GetOccurrenceByID(context.Background(), 123); err == nil || !strings.Contains(err.Error(), "status=502") {
+			t.Fatalf("expected non-2xx error, got %v", err)
+		}
+	})
+
+	t.Run("envelope err", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"err":1,"message":"nope"}`))
+		}))
+		defer ts.Close()
+
+		client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+		if _, err := client.GetOccurrenceByID(context.Background(), 123); err == nil || !strings.Contains(err.Error(), "err=1") {
+			t.Fatalf("expected envelope error, got %v", err)
+		}
+	})
+}
+
 func TestUpdateItemByID(t *testing.T) {
 	var gotMethod string
 	var gotPath string
