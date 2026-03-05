@@ -13,9 +13,13 @@ Primarily because I wanted to build an AI Agent Skill to allow AI interaction wi
 
 > Find all unresolved rollbar errors from the last 24 hours and create fixes with associated PRs
 
-When combined with an appropriate GitHub Skill to create PRs etc.
- 
-NOTE: The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and deployments.
+When combined with an appropriate GitHub Skill to interact with PRs, such
+as [Yeet](https://github.com/openai/skills/tree/main/skills/.curated/yeet),
+and a scheduled daily automation workflow,
+bug fix PRs for new errors can be waiting for you to review at the start of each day.
+
+NOTE: The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and
+deployments.
 
 ## Build
 
