@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"rollbar-cli/internal/ui"
 )
 
 func TestItemsListCommandJSON(t *testing.T) {
@@ -82,8 +84,8 @@ func TestItemsCommandValidationErrors(t *testing.T) {
 
 func TestPrepareWatchListOptionsForcesPlainTextDefaults(t *testing.T) {
 	opts := prepareWatchListOptions(itemsListOptions{})
-	if !reflect.DeepEqual(opts.Fields, defaultWatchFields) {
-		t.Fatalf("prepareWatchListOptions() fields = %#v, want %#v", opts.Fields, defaultWatchFields)
+	if !reflect.DeepEqual(opts.Fields, ui.DefaultItemListFields()) {
+		t.Fatalf("prepareWatchListOptions() fields = %#v, want %#v", opts.Fields, ui.DefaultItemListFields())
 	}
 }
 
@@ -91,5 +93,12 @@ func TestPrepareWatchListOptionsLeavesStructuredOutputUnchanged(t *testing.T) {
 	opts := prepareWatchListOptions(itemsListOptions{JSON: true})
 	if len(opts.Fields) != 0 {
 		t.Fatalf("expected json watch options to keep empty fields, got %#v", opts.Fields)
+	}
+}
+
+func TestPrepareWatchListOptionsNormalizesEmptyFields(t *testing.T) {
+	opts := prepareWatchListOptions(itemsListOptions{Fields: []string{" ", ""}})
+	if !reflect.DeepEqual(opts.Fields, ui.DefaultItemListFields()) {
+		t.Fatalf("prepareWatchListOptions() fields = %#v, want %#v", opts.Fields, ui.DefaultItemListFields())
 	}
 }

@@ -56,8 +56,14 @@ type model struct {
 	command         func(string, ...string) *exec.Cmd
 }
 
+var defaultItemListFields = []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
+
 func RenderItems(items []rollbar.Item) error {
 	return RenderItemsWithOptions(items, ItemListRenderOptions{})
+}
+
+func DefaultItemListFields() []string {
+	return append([]string(nil), defaultItemListFields...)
 }
 
 func RenderItemsWithOptions(items []rollbar.Item, opts ItemListRenderOptions) error {
@@ -242,7 +248,7 @@ func renderItemsTUI(items []rollbar.Item, opts ItemListRenderOptions) error {
 func renderItemsPlain(w io.Writer, items []rollbar.Item, opts ItemListRenderOptions) error {
 	fields := opts.Fields
 	if len(fields) == 0 {
-		fields = []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
+		fields = defaultItemListFields
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if !opts.NoHeaders {
