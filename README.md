@@ -13,7 +13,7 @@ Primarily because I wanted to build an AI Agent Skill to allow AI interaction wi
 
 > Find all unresolved rollbar errors from the last 24 hours and create fixes with associated PRs
 
-When combined with an appropriate GitHub Skill to create PRs etc..
+When combined with an appropriate GitHub Skill to create PRs etc.
  
 NOTE: The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and deployments.
 
