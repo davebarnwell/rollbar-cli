@@ -333,7 +333,7 @@ func newItemsCmd(cfg *cliConfig) *cobra.Command {
 						return err
 					}
 				}
-				if err := runItemsList(cmd, cfg, listOpts); err != nil {
+				if err := runItemsList(cmd, cfg, prepareWatchListOptions(listOpts)); err != nil {
 					return err
 				}
 				if i+1 < watchOpts.Count {
@@ -468,6 +468,17 @@ func runItemsList(cmd *cobra.Command, cfg *cliConfig, opts itemsListOptions) err
 			},
 		})
 	}
+}
+
+func prepareWatchListOptions(opts itemsListOptions) itemsListOptions {
+	output, err := resolveOutputModeWithAliases(opts.Output, opts.JSON, opts.RawJSON, opts.NDJSON, outputText, outputJSON, outputRawJSON, outputNDJSON)
+	if err != nil {
+		return opts
+	}
+	if output == outputText && len(opts.Fields) == 0 {
+		opts.Fields = []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
+	}
+	return opts
 }
 
 func updateItemForTUI(cmd *cobra.Command, client *rollbar.Client, id int64, body map[string]any) (rollbar.Item, error) {

@@ -3,6 +3,7 @@ package cmd
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -76,5 +77,20 @@ func TestItemsCommandValidationErrors(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "invalid item id") {
 		t.Fatalf("expected invalid id error, got %v", err)
+	}
+}
+
+func TestPrepareWatchListOptionsForcesPlainTextDefaults(t *testing.T) {
+	opts := prepareWatchListOptions(itemsListOptions{})
+	want := []string{"id", "counter", "level", "status", "environment", "last_seen", "title"}
+	if !reflect.DeepEqual(opts.Fields, want) {
+		t.Fatalf("prepareWatchListOptions() fields = %#v, want %#v", opts.Fields, want)
+	}
+}
+
+func TestPrepareWatchListOptionsLeavesStructuredOutputUnchanged(t *testing.T) {
+	opts := prepareWatchListOptions(itemsListOptions{JSON: true})
+	if len(opts.Fields) != 0 {
+		t.Fatalf("expected json watch options to keep empty fields, got %#v", opts.Fields)
 	}
 }

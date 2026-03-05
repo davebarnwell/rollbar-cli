@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -52,6 +53,11 @@ type model struct {
 	statusMessage   string
 	interactions    *ItemListInteractions
 }
+
+var (
+	execLookPath = exec.LookPath
+	execCommand  = exec.Command
+)
 
 func RenderItems(items []rollbar.Item) error {
 	return RenderItemsWithOptions(items, ItemListRenderOptions{})
@@ -465,12 +471,41 @@ func (m model) copyItemID(item rollbar.Item) error {
 	if m.interactions != nil && m.interactions.CopyItemID != nil {
 		return m.interactions.CopyItemID(item)
 	}
-	if path, err := exec.LookPath("pbcopy"); err == nil {
-		cmd := exec.Command(path)
+	for _, candidate := range clipboardCommands(runtime.GOOS) {
+		path, err := execLookPath(candidate.name)
+		if err != nil {
+			continue
+		}
+		cmd := execCommand(path, candidate.args...)
 		cmd.Stdin = strings.NewReader(strconv.FormatInt(item.ID, 10))
-		return cmd.Run()
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+		return nil
 	}
 	return fmt.Errorf("clipboard support unavailable")
+}
+
+type clipboardCommand struct {
+	name string
+	args []string
+}
+
+func clipboardCommands(goos string) []clipboardCommand {
+	switch goos {
+	case "windows":
+		return []clipboardCommand{{name: "clip"}}
+	case "darwin":
+		return []clipboardCommand{{name: "pbcopy"}}
+	default:
+		return []clipboardCommand{
+			{name: "wl-copy"},
+			{name: "xclip", args: []string{"-selection", "clipboard"}},
+			{name: "xsel", args: []string{"--clipboard", "--input"}},
+			{name: "pbcopy"},
+			{name: "clip"},
+		}
+	}
 }
 
 func fieldHeaders(fields []string) []string {

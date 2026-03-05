@@ -210,4 +210,4 @@ rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 - Base API URL defaults to `https://api.rollbar.com` and can be overridden with `--base-url`.
 - `--json` emits normalized, stable CLI JSON; `--raw-json` preserves Rollbar API envelopes.
 - `items list` supports client-side `--since`, `--until`, `--last`, `--sort`, `--limit`, and `--pages`.
-- The item TUI now shows item IDs and supports `enter` to toggle a detail pane for the selected row.
+- The item TUI now shows item IDs and supports `enter` to load occurrences, `o` to toggle details, `y` to copy the item ID, and `r` / `m` to resolve or mute the selected row.

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -209,6 +211,62 @@ func TestModelCopyAndResolveActions(t *testing.T) {
 	updated = next.(model)
 	if updated.items[0].Status != "muted" {
 		t.Fatalf("expected muted status, got %#v", updated.items[0])
+	}
+}
+
+func TestClipboardCommands(t *testing.T) {
+	if got := clipboardCommands("darwin"); len(got) != 1 || got[0].name != "pbcopy" {
+		t.Fatalf("unexpected darwin clipboard commands: %#v", got)
+	}
+	if got := clipboardCommands("windows"); len(got) != 1 || got[0].name != "clip" {
+		t.Fatalf("unexpected windows clipboard commands: %#v", got)
+	}
+	got := clipboardCommands("linux")
+	if len(got) < 3 || got[0].name != "wl-copy" || got[1].name != "xclip" || got[2].name != "xsel" {
+		t.Fatalf("unexpected linux clipboard commands: %#v", got)
+	}
+}
+
+func TestModelCopyItemIDUsesAvailableClipboardCommand(t *testing.T) {
+	dir := t.TempDir()
+	outputPath := dir + "/clipboard.txt"
+	candidates := clipboardCommands(runtime.GOOS)
+	if len(candidates) == 0 {
+		t.Fatal("expected at least one clipboard command candidate")
+	}
+	candidateName := candidates[0].name
+
+	origLookPath := execLookPath
+	origCommand := execCommand
+	t.Cleanup(func() {
+		execLookPath = origLookPath
+		execCommand = origCommand
+	})
+
+	execLookPath = func(file string) (string, error) {
+		if file == candidateName {
+			return file, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		if name != candidateName {
+			t.Fatalf("unexpected clipboard command %q", name)
+		}
+		return exec.Command("sh", "-c", "cat > \"$1\"", "clipboard-test", outputPath)
+	}
+
+	m := newTestModel()
+	if err := m.copyItemID(m.items[0]); err != nil {
+		t.Fatalf("copyItemID() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "12" {
+		t.Fatalf("clipboard contents = %q, want %q", got, "12")
 	}
 }
 
