@@ -1,6 +1,9 @@
 # rollbar-cli
 
-A Go CLI for querying [Rollbar](https://rollbar.com), including item and occurrence workflows, with:
+Enables an AI agent to query Rollbar and create bug fix PRs. You can also query manually too.
+
+The CLI is for querying [Rollbar](https://rollbar.com) to triage error items and occurrences, with an associated
+Agentic Skill to expose the CLI tool usage to the coding agent, built with:
 
 - [Cobra command framework](https://cobra.dev)
 - [Rollbar API](https://docs.rollbar.com/reference/getting-started-1) integration (`GET /api/1/items`)
@@ -9,26 +12,27 @@ A Go CLI for querying [Rollbar](https://rollbar.com), including item and occurre
 
 ## Why?
 
-Primarily because I wanted to build an AI Agent Skill to allow AI interaction with Rollbar via prompts such as
+Using a scheduled/automation task of codex (or claude code), the prompt below and the provided agent skill in this repo
+enables an AI agent to daily query Rollbar and create bug fix PRs automatically.
 
 > Find all unresolved rollbar errors from the last 24 hours and create fixes with associated PRs
 
-When combined with an appropriate GitHub Skill to interact with PRs, such
-as [Yeet](https://github.com/openai/skills/tree/main/skills/.curated/yeet),
-and a scheduled daily automation workflow,
-bug fix PRs for new errors can be waiting for you to review at the start of each day.
+You'll also need an appropriate GitHub Skill installed to interact with PRs, such
+as [Yeet](https://github.com/openai/skills/tree/main/skills/.curated/yeet).
+
+It's magical to have this scheduled daily for 6am and start the work day reviewing bug fix PRs.
 
 NOTE: The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) only supports source map uploads and
-deployments.
+deployments, hence this CLI is a minimal alternative.
 
-## Build
+## Build It
 
 ```bash
 go mod tidy
 go build -o rollbar-cli .
 ```
 
-## Makefile Commands
+## Makefile It (build, install, etc.)
 
 ```bash
 # show available targets
@@ -53,7 +57,7 @@ make test-cover
 make clean
 ```
 
-## Testing
+## Testing It
 
 ```bash
 # vet code
@@ -77,7 +81,10 @@ Provide a Rollbar project token with `read` scope (or `read` and `write` if you 
 - flag: `--token`
 - or env var: `ROLLBAR_ACCESS_TOKEN`
 
-Optional config profiles are supported via `--config` / `--profile`, `ROLLBAR_CLI_CONFIG`, or `~/.config/rollbar-cli/config.json`:
+### Config profiles (optional)
+
+Optional config profiles are supported via `--config` / `--profile`, `ROLLBAR_CLI_CONFIG`, or
+`~/.config/rollbar-cli/config.json`:
 
 ```json
 {
@@ -115,7 +122,6 @@ sudo cp _rollbar-cli /usr/local/share/zsh/site-functions/
 mkdir -p ~/.zsh/completions
 rollbar-cli completion zsh > ~/.zsh/completions/_rollbar-cli
 ```
-
 
 ## Usage
 
@@ -210,4 +216,5 @@ rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 - Base API URL defaults to `https://api.rollbar.com` and can be overridden with `--base-url`.
 - `--json` emits normalized, stable CLI JSON; `--raw-json` preserves Rollbar API envelopes.
 - `items list` supports client-side `--since`, `--until`, `--last`, `--sort`, `--limit`, and `--pages`.
-- The item TUI now shows item IDs and supports `enter` to load occurrences, `o` to toggle details, `y` to copy the item ID, and `r` / `m` to resolve or mute the selected row.
+- The item TUI now shows item IDs and supports `enter` to load occurrences, `o` to toggle details, `y` to copy the item
+  ID, and `r` / `m` to resolve or mute the selected row.
