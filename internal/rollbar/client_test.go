@@ -395,6 +395,8 @@ func TestListEnvironments(t *testing.T) {
 			]}}`))
 		case "2":
 			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[{"id":21,"project_id":88,"environment":"sandbox"}]}}`))
+		case "3":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[]}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -407,10 +409,10 @@ func TestListEnvironments(t *testing.T) {
 		t.Fatalf("unexpected list environments error: %v", err)
 	}
 
-	if len(gotPaths) != 2 || gotPaths[0] != "/api/1/environments" || gotPaths[1] != "/api/1/environments" {
+	if len(gotPaths) != 3 || gotPaths[0] != "/api/1/environments" || gotPaths[1] != "/api/1/environments" || gotPaths[2] != "/api/1/environments" {
 		t.Fatalf("unexpected environment paths: %#v", gotPaths)
 	}
-	if len(gotPages) != 2 || gotPages[0] != "1" || gotPages[1] != "2" {
+	if len(gotPages) != 3 || gotPages[0] != "1" || gotPages[1] != "2" || gotPages[2] != "3" {
 		t.Fatalf("unexpected environment pages: %#v", gotPages)
 	}
 	if gotToken != "tok" {
@@ -425,14 +427,21 @@ func TestListEnvironments(t *testing.T) {
 	if resp.Environments[1].Name != "staging" {
 		t.Fatalf("expected fallback environment name, got %#v", resp.Environments[1])
 	}
-	if len(resp.RawPages) != 2 || resp.RawPages[0]["err"] == nil {
+	if len(resp.RawPages) != 3 || resp.RawPages[0]["err"] == nil || resp.RawPages[2]["err"] == nil {
 		t.Fatalf("expected raw pages to be present: %#v", resp.RawPages)
 	}
 }
 
 func TestListEnvironmentsDirectArray(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"err":0,"result":[{"id":1,"project_id":88,"environment":"production"}]}`))
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_, _ = w.Write([]byte(`{"err":0,"result":[{"id":1,"project_id":88,"environment":"production"}]}`))
+		case "2":
+			_, _ = w.Write([]byte(`{"err":0,"result":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer ts.Close()
 
@@ -443,6 +452,9 @@ func TestListEnvironmentsDirectArray(t *testing.T) {
 	}
 	if len(resp.Environments) != 1 || resp.Environments[0].Name != "production" {
 		t.Fatalf("unexpected environments: %#v", resp.Environments)
+	}
+	if len(resp.RawPages) != 2 {
+		t.Fatalf("expected raw pages for data page and terminating empty page, got %#v", resp.RawPages)
 	}
 }
 

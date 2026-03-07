@@ -180,8 +180,6 @@ type apiResponse struct {
 	Envelope apiEnvelope
 }
 
-const environmentsPageSize = 20
-
 func (c *Client) doJSON(ctx context.Context, method string, path string, query url.Values, payload any) (*apiResponse, error) {
 	endpoint, err := url.Parse(c.baseURL + path)
 	if err != nil {
@@ -428,12 +426,10 @@ func (c *Client) ListEnvironments(ctx context.Context) (*ListEnvironmentsRespons
 			pageEnvironments = append(pageEnvironments, environment)
 		}
 
-		if page == 1 || len(pageEnvironments) > 0 {
-			rawPages = append(rawPages, resp.Raw)
-		}
+		rawPages = append(rawPages, resp.Raw)
 		environments = append(environments, pageEnvironments...)
 
-		if len(pageEnvironments) < environmentsPageSize {
+		if len(pageEnvironments) == 0 {
 			break
 		}
 	}

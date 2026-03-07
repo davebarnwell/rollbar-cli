@@ -38,6 +38,8 @@ func TestEnvironmentsListCommandJSONPaginates(t *testing.T) {
 			]}}`))
 		case "2":
 			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[{"id":21,"project_id":42,"environment":"sandbox"}]}}`))
+		case "3":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[]}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -53,7 +55,7 @@ func TestEnvironmentsListCommandJSONPaginates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected command error: %v", err)
 	}
-	if len(gotPages) != 2 || gotPages[0] != "1" || gotPages[1] != "2" {
+	if len(gotPages) != 3 || gotPages[0] != "1" || gotPages[1] != "2" || gotPages[2] != "3" {
 		t.Fatalf("unexpected requested pages: %#v", gotPages)
 	}
 	if !strings.Contains(out, "\"environments\"") || !strings.Contains(out, "\"Name\": \"sandbox\"") {
@@ -63,7 +65,14 @@ func TestEnvironmentsListCommandJSONPaginates(t *testing.T) {
 
 func TestEnvironmentsListCommandRawJSONAggregatesPages(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[{"id":1,"project_id":42,"environment":"production"}]}}`))
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[{"id":1,"project_id":42,"environment":"production"}]}}`))
+		case "2":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[]}}`))
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer ts.Close()
 
@@ -76,7 +85,7 @@ func TestEnvironmentsListCommandRawJSONAggregatesPages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected command error: %v", err)
 	}
-	if !strings.Contains(out, "\"pages\"") || !strings.Contains(out, "\"environment\": \"production\"") {
+	if !strings.Contains(out, "\"pages\"") || !strings.Contains(out, "\"environment\": \"production\"") || !strings.Contains(out, "\"environments\": []") {
 		t.Fatalf("unexpected raw-json output: %q", out)
 	}
 }
