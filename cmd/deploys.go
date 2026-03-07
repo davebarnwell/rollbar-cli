@@ -67,10 +67,6 @@ type deployGetJSONOutput struct {
 	Deploy rollbar.Deploy `json:"deploy"`
 }
 
-type deployListRawOutput struct {
-	Pages []map[string]any `json:"pages"`
-}
-
 func newDeploysCmd(cfg *cliConfig) *cobra.Command {
 	var (
 		listOpts   deploysListOptions
@@ -165,7 +161,7 @@ func newDeploysCmd(cfg *cliConfig) *cobra.Command {
 				return err
 			}
 
-			body, err := buildDeployUpdateBody(cmd, updateOpts)
+			body, err := buildDeployUpdateBody(updateOpts)
 			if err != nil {
 				return err
 			}
@@ -274,7 +270,7 @@ func collectDeploys(cmd *cobra.Command, cfg *cliConfig, opts deploysListOptions)
 	if opts.Limit > 0 && len(deploys) > opts.Limit {
 		deploys = deploys[:opts.Limit]
 	}
-	return deploys, map[string]any{"pages": []map[string]any{resp.Raw}}, nil
+	return deploys, resp.Raw, nil
 }
 
 func writeSingleDeployOutput(deploy rollbar.Deploy, raw map[string]any, output string) error {
@@ -364,7 +360,7 @@ func buildDeployCreateBody(opts deploysCreateOptions) (map[string]any, error) {
 	return body, nil
 }
 
-func buildDeployUpdateBody(cmd *cobra.Command, opts deploysUpdateOptions) (map[string]any, error) {
+func buildDeployUpdateBody(opts deploysUpdateOptions) (map[string]any, error) {
 	status, err := normalizeDeployStatus(opts.Status)
 	if err != nil {
 		return nil, err

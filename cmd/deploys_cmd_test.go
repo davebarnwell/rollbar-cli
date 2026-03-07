@@ -41,6 +41,29 @@ func TestDeploysListCommandJSON(t *testing.T) {
 	}
 }
 
+func TestDeploysListCommandRawJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"err":0,"result":{"deploys":[{"id":123,"environment":"production","revision":"aabbcc1","status":"started"}]}}`))
+	}))
+	defer ts.Close()
+
+	out, err := runCLIWithCapturedStdout(t,
+		"deploys", "list",
+		"--raw-json",
+		"--token", "tok",
+		"--base-url", ts.URL,
+	)
+	if err != nil {
+		t.Fatalf("unexpected command error: %v", err)
+	}
+	if !strings.Contains(out, "\"result\"") || !strings.Contains(out, "\"deploys\"") {
+		t.Fatalf("expected raw API envelope, got %q", out)
+	}
+	if strings.Contains(out, "\"pages\"") {
+		t.Fatalf("expected direct raw API envelope, got %q", out)
+	}
+}
+
 func TestDeploysGetCommandNDJSON(t *testing.T) {
 	var gotPath string
 
