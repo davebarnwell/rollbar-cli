@@ -41,6 +41,7 @@ Verify the install:
 
 ```bash
 go version
+# example: go version go1.26.0 darwin/arm64
 ```
 
 Then install `rollbar-cli`:
