@@ -18,6 +18,7 @@ Use this skill to quickly find and triage Rollbar issues with `rollbar-cli`.
 - You want recent issues in stable JSON or NDJSON for automation or triage notes.
 - You want to narrow by environment and severity level.
 - You need to discover which environments exist before filtering.
+- You need to inspect deploy history or correlate regressions with a specific release.
 - You need to inspect raw occurrences for a specific item or fetch one occurrence directly.
 - You need to look up Rollbar account users before assigning an item.
 
@@ -186,7 +187,70 @@ rollbar-cli environments list --ndjson
 rollbar-cli environments list --fields environment,project_id --no-headers
 ```
 
-### 14) List account users
+### 14) List deploys
+
+```bash
+# default text output
+rollbar-cli deploys list
+
+# page through deploy history
+rollbar-cli deploys list --page 2 --limit 20 --json
+
+# raw API envelope
+rollbar-cli deploys list --page 1 --raw-json
+
+# NDJSON for downstream tooling
+rollbar-cli deploys list --page 1 --ndjson
+```
+
+### 15) Get one deploy by ID
+
+```bash
+# positional id
+rollbar-cli deploys get 12345 --json
+
+# or explicit flag
+rollbar-cli deploys get --id 12345
+
+# NDJSON for downstream tooling
+rollbar-cli deploys get --id 12345 --ndjson
+
+# raw Rollbar envelope
+rollbar-cli deploys get --id 12345 --raw-json
+```
+
+### 16) Create a deploy record
+
+```bash
+rollbar-cli deploys create \
+  --environment production \
+  --revision aabbcc1 \
+  --status started \
+  --comment "Deploy started from CI" \
+  --local-username ci-bot \
+  --json
+
+# associate a Rollbar user instead of a local username
+rollbar-cli deploys create \
+  --environment production \
+  --revision aabbcc1 \
+  --rollbar-username dave
+```
+
+### 17) Update a deploy record
+
+```bash
+# mark the deploy as complete
+rollbar-cli deploys update 12345 \
+  --status succeeded \
+  --json
+
+# mark a deploy as failed
+rollbar-cli deploys update --id 12345 \
+  --status failed
+```
+
+### 18) List account users
 
 ```bash
 # default text output
@@ -205,7 +269,7 @@ rollbar-cli users list --ndjson
 rollbar-cli users list --fields id,username,email --no-headers
 ```
 
-### 15) Get one user by ID
+### 19) Get one user by ID
 
 ```bash
 # positional id
@@ -247,14 +311,17 @@ rollbar-cli items list --status active --json \
 2. Narrow with `--last`, `--since`, `--sort`, and `--limit`.
 3. Open top counters/IDs with `rollbar-cli items get --instances` for stack context.
 4. Use `rollbar-cli occurrences list` when you want to inspect occurrence-level payloads for an item.
-5. Use `rollbar-cli environments list` if you need the exact environment names before applying `--environment`.
-6. Use `rollbar-cli users list` to find candidate assignee IDs before assigning items.
-7. Use `items resolve|mute|assign|snooze` for common triage actions.
+5. Use `rollbar-cli deploys list --page 1` when you need to correlate an error spike with a recent deploy.
+6. Use `rollbar-cli environments list` if you need the exact environment names before applying `--environment`.
+7. Use `rollbar-cli users list` to find candidate assignee IDs before assigning items.
+8. Use `items resolve|mute|assign|snooze` for common triage actions.
 
 ## Example Follow-up Commands
 
 ```bash
 rollbar-cli items list --status active --environment production --last 24h --sort counter_desc --limit 10 --json
+rollbar-cli deploys list --page 1 --limit 20 --json
+rollbar-cli deploys get --id 12345 --json
 rollbar-cli items get --id 275123456 --instances --payload summary --payload-section request
 rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --raw-json
 rollbar-cli environments list --json
@@ -262,6 +329,7 @@ rollbar-cli occurrences list --item-id 275123456 --ndjson
 rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 rollbar-cli users list --json
 rollbar-cli users get --id 7 --json
+rollbar-cli deploys update --id 12345 --status failed
 rollbar-cli items resolve --id 275123456 --resolved-in-version aabbcc1
 rollbar-cli items assign --uuid 01234567-89ab-cdef-0123-456789abcdef --assigned-user-id 321
 ```
