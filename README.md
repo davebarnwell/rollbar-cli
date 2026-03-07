@@ -276,6 +276,7 @@ Required GitHub Actions secrets for macOS releases:
 - `APPLE_NOTARY_PRIVATE_KEY_BASE64`: base64-encoded contents of the App Store Connect `.p8` key
 
 macOS assets are published as `.zip` archives instead of `.tar.gz` so they can be submitted to Apple's notarization service before release.
+If any of those secrets are missing, the release workflow skips macOS assets and still publishes the Linux and Windows artifacts.
 
 ## Notes
 

@@ -23,6 +23,7 @@ jobs:
     outputs:
       merged_sha: ${{ steps.meta.outputs.merged_sha }}
       tag: ${{ steps.meta.outputs.tag }}
+      macos_release_enabled: ${{ steps.macos.outputs.enabled }}
 
     steps:
       - name: Check out repository
@@ -30,6 +31,41 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Detect macOS signing credentials
+        id: macos
+        env:
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_PRIVATE_KEY_BASE64: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          enabled=true
+          missing_names=""
+          for name in \
+            APPLE_KEYCHAIN_PASSWORD \
+            APPLE_NOTARY_ISSUER_ID \
+            APPLE_NOTARY_KEY_ID \
+            APPLE_NOTARY_PRIVATE_KEY_BASE64 \
+            APPLE_SIGNING_CERTIFICATE_P12_BASE64 \
+            APPLE_SIGNING_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY; do
+            if [ -z "${!name:-}" ]; then
+              enabled=false
+              missing_names="${missing_names}${name} "
+            fi
+          done
+
+          echo "enabled=${enabled}" >> "${GITHUB_OUTPUT}"
+
+          if [ "${enabled}" != "true" ]; then
+            echo "Skipping macOS release assets because Apple signing/notarization secrets are missing: ${missing_names}" >&2
+          fi
 
       - name: Compute tag and attach it to merged commit
         id: meta
@@ -99,6 +135,7 @@ jobs:
 
   build:
     needs: prepare
+    if: matrix.goos != 'darwin' || needs.prepare.outputs.macos_release_enabled == 'true'
     runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
@@ -153,25 +190,6 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
-
-          missing=0
-          for name in \
-            APPLE_KEYCHAIN_PASSWORD \
-            APPLE_NOTARY_ISSUER_ID \
-            APPLE_NOTARY_KEY_ID \
-            APPLE_NOTARY_PRIVATE_KEY_BASE64 \
-            APPLE_SIGNING_CERTIFICATE_P12_BASE64 \
-            APPLE_SIGNING_CERTIFICATE_PASSWORD \
-            APPLE_SIGNING_IDENTITY; do
-            if [ -z "${!name:-}" ]; then
-              echo "Missing required secret: ${name}" >&2
-              missing=1
-            fi
-          done
-
-          if [ "${missing}" -ne 0 ]; then
-            exit 1
-          fi
 
           signing_dir="${RUNNER_TEMP}/apple-signing"
           cert_path="${signing_dir}/signing-cert.p12"
