@@ -108,6 +108,8 @@ Additional environment overrides:
 - `ROLLBAR_BASE_URL`
 - `ROLLBAR_TIMEOUT`
 
+**NOTE:** Rollbar access tokens can be account level or project level, which is where the config profile can be useful.
+
 Example config file:
 
 ```json
