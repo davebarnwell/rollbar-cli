@@ -32,6 +32,11 @@ type ListItemsOptions struct {
 	Level       []string
 }
 
+type ListDeploysOptions struct {
+	Page  int
+	Limit int
+}
+
 type Item struct {
 	ID                      int64
 	Counter                 int64
@@ -47,6 +52,25 @@ type User struct {
 	ID       int64
 	Username string
 	Email    string
+}
+
+type Environment struct {
+	ID        int64
+	ProjectID int64
+	Name      string
+}
+
+type Deploy struct {
+	ID              int64
+	ProjectID       int64
+	Environment     string
+	Revision        string
+	Status          string
+	Comment         string
+	LocalUsername   string
+	RollbarUsername string
+	StartTime       int64
+	FinishTime      int64
 }
 
 type StackFrame struct {
@@ -80,9 +104,24 @@ type ListUsersResponse struct {
 	Raw   map[string]any
 }
 
+type ListDeploysResponse struct {
+	Deploys []Deploy
+	Raw     map[string]any
+}
+
+type ListEnvironmentsResponse struct {
+	Environments []Environment
+	RawPages     []map[string]any
+}
+
 type GetUserResponse struct {
 	User User
 	Raw  map[string]any
+}
+
+type GetDeployResponse struct {
+	Deploy Deploy
+	Raw    map[string]any
 }
 
 type ListItemInstancesResponse struct {
@@ -100,6 +139,16 @@ type UpdateItemResponse struct {
 	Raw  map[string]any
 }
 
+type CreateDeployResponse struct {
+	Deploy Deploy
+	Raw    map[string]any
+}
+
+type UpdateDeployResponse struct {
+	Deploy Deploy
+	Raw    map[string]any
+}
+
 type apiEnvelope struct {
 	Err     int             `json:"err"`
 	Message string          `json:"message"`
@@ -112,6 +161,14 @@ type listItemsResult struct {
 
 type listUsersResult struct {
 	Users []json.RawMessage `json:"users"`
+}
+
+type listDeploysResult struct {
+	Deploys []json.RawMessage `json:"deploys"`
+}
+
+type listEnvironmentsResult struct {
+	Environments []json.RawMessage `json:"environments"`
 }
 
 type listItemInstancesResult struct {
@@ -323,6 +380,169 @@ func (c *Client) ListUsers(ctx context.Context) (*ListUsersResponse, error) {
 	}
 
 	return &ListUsersResponse{Users: users, Raw: resp.Raw}, nil
+}
+
+func (c *Client) ListEnvironments(ctx context.Context) (*ListEnvironmentsResponse, error) {
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	environments := make([]Environment, 0)
+	rawPages := make([]map[string]any, 0)
+
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+
+		resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/environments", query, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var result listEnvironmentsResult
+		if len(resp.Envelope.Result) > 0 {
+			if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
+				var directEnvironments []json.RawMessage
+				if directErr := json.Unmarshal(resp.Envelope.Result, &directEnvironments); directErr == nil {
+					result.Environments = directEnvironments
+				} else {
+					return nil, fmt.Errorf("parse result.environments: %w", err)
+				}
+			}
+			if len(result.Environments) == 0 {
+				var directEnvironments []json.RawMessage
+				if err := json.Unmarshal(resp.Envelope.Result, &directEnvironments); err == nil {
+					result.Environments = directEnvironments
+				}
+			}
+		}
+
+		pageEnvironments := make([]Environment, 0, len(result.Environments))
+		for idx, rawEnvironment := range result.Environments {
+			environment, err := normalizeEnvironment(rawEnvironment)
+			if err != nil {
+				return nil, fmt.Errorf("decode environment %d: %w", idx, err)
+			}
+			pageEnvironments = append(pageEnvironments, environment)
+		}
+
+		rawPages = append(rawPages, resp.Raw)
+		environments = append(environments, pageEnvironments...)
+
+		if len(pageEnvironments) == 0 {
+			break
+		}
+	}
+
+	return &ListEnvironmentsResponse{Environments: environments, RawPages: rawPages}, nil
+}
+
+func (c *Client) ListDeploys(ctx context.Context, opts ListDeploysOptions) (*ListDeploysResponse, error) {
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	query := url.Values{}
+	if opts.Page > 0 {
+		query.Set("page", strconv.Itoa(opts.Page))
+	}
+	if opts.Limit > 0 {
+		query.Set("limit", strconv.Itoa(opts.Limit))
+	}
+
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/deploys", query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result listDeploysResult
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
+			var directDeploys []json.RawMessage
+			if directErr := json.Unmarshal(resp.Envelope.Result, &directDeploys); directErr == nil {
+				result.Deploys = directDeploys
+			} else {
+				return nil, fmt.Errorf("parse result.deploys: %w", err)
+			}
+		}
+		if len(result.Deploys) == 0 {
+			var directDeploys []json.RawMessage
+			if err := json.Unmarshal(resp.Envelope.Result, &directDeploys); err == nil {
+				result.Deploys = directDeploys
+			}
+		}
+	}
+
+	deploys := make([]Deploy, 0, len(result.Deploys))
+	for idx, rawDeploy := range result.Deploys {
+		deploy, err := normalizeDeploy(rawDeploy)
+		if err != nil {
+			return nil, fmt.Errorf("decode deploy %d: %w", idx, err)
+		}
+		deploys = append(deploys, deploy)
+	}
+
+	return &ListDeploysResponse{Deploys: deploys, Raw: resp.Raw}, nil
+}
+
+func (c *Client) GetDeployByID(ctx context.Context, id int64) (*GetDeployResponse, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid deploy id: must be > 0")
+	}
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/deploy/"+strconv.FormatInt(id, 10), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GetDeployResponse{
+		Deploy: extractDeployResult(resp.Envelope.Result, id),
+		Raw:    resp.Raw,
+	}, nil
+}
+
+func (c *Client) CreateDeploy(ctx context.Context, body map[string]any) (*CreateDeployResponse, error) {
+	if len(body) == 0 {
+		return nil, fmt.Errorf("missing deploy fields")
+	}
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	resp, err := c.doJSON(ctx, http.MethodPost, "/api/1/deploy", nil, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CreateDeployResponse{
+		Deploy: extractDeployResult(resp.Envelope.Result, 0),
+		Raw:    resp.Raw,
+	}, nil
+}
+
+func (c *Client) UpdateDeployByID(ctx context.Context, id int64, body map[string]any) (*UpdateDeployResponse, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid deploy id: must be > 0")
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("missing update fields")
+	}
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	resp, err := c.doJSON(ctx, http.MethodPatch, "/api/1/deploy/"+strconv.FormatInt(id, 10), nil, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return &UpdateDeployResponse{
+		Deploy: extractDeployResult(resp.Envelope.Result, id),
+		Raw:    resp.Raw,
+	}, nil
 }
 
 func (c *Client) GetUserByID(ctx context.Context, id int64) (*GetUserResponse, error) {
@@ -577,6 +797,53 @@ func normalizeUserMap(m map[string]any) User {
 	}
 }
 
+func normalizeEnvironment(rawEnvironment json.RawMessage) (Environment, error) {
+	var m map[string]any
+	if err := json.Unmarshal(rawEnvironment, &m); err != nil {
+		return Environment{}, err
+	}
+	return normalizeEnvironmentMap(m), nil
+}
+
+func normalizeEnvironmentMap(m map[string]any) Environment {
+	if m == nil {
+		return Environment{}
+	}
+
+	return Environment{
+		ID:        firstInt64(m, "id", "environment_id"),
+		ProjectID: firstInt64(m, "project_id", "projectId"),
+		Name:      firstString(m, "environment", "name"),
+	}
+}
+
+func normalizeDeploy(rawDeploy json.RawMessage) (Deploy, error) {
+	var m map[string]any
+	if err := json.Unmarshal(rawDeploy, &m); err != nil {
+		return Deploy{}, err
+	}
+	return normalizeDeployMap(m), nil
+}
+
+func normalizeDeployMap(m map[string]any) Deploy {
+	if m == nil {
+		return Deploy{}
+	}
+
+	return Deploy{
+		ID:              firstInt64(m, "id", "deploy_id"),
+		ProjectID:       firstInt64(m, "project_id", "projectId"),
+		Environment:     firstString(m, "environment"),
+		Revision:        firstString(m, "revision"),
+		Status:          firstString(m, "status"),
+		Comment:         firstString(m, "comment"),
+		LocalUsername:   firstString(m, "local_username", "localUsername"),
+		RollbarUsername: firstString(m, "rollbar_username", "rollbar_name", "rollbarUsername"),
+		StartTime:       firstInt64(m, "start_time", "startTime"),
+		FinishTime:      firstInt64(m, "finish_time", "finishTime"),
+	}
+}
+
 func normalizeInstance(rawInstance json.RawMessage) (ItemInstance, error) {
 	var m map[string]any
 	if err := json.Unmarshal(rawInstance, &m); err != nil {
@@ -682,6 +949,30 @@ func extractPayload(instance map[string]any) map[string]any {
 		return nil
 	}
 	return payload
+}
+
+func extractDeployResult(raw json.RawMessage, fallbackID int64) Deploy {
+	if len(raw) == 0 {
+		return Deploy{ID: fallbackID}
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return Deploy{ID: fallbackID}
+	}
+
+	deployData := result
+	if v, ok := result["deploy"]; ok {
+		if nested, ok := v.(map[string]any); ok {
+			deployData = nested
+		}
+	}
+
+	deploy := normalizeDeployMap(deployData)
+	if deploy.ID == 0 {
+		deploy.ID = fallbackID
+	}
+	return deploy
 }
 
 func firstString(data map[string]any, keys ...string) string {

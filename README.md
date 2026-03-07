@@ -12,6 +12,8 @@ workflows.
 - List Rollbar items with environment, level, status, time, sort, and paging filters
 - Fetch a single item by ID or UUID, optionally with associated occurrences
 - List or fetch occurrences for an item
+- List, fetch, create, and update deploy records
+- List all project environments
 - List account users
 - Update item status, title, level, assignment, and snooze state
 - Render stable JSON, raw API JSON, NDJSON, or text/TUI output
@@ -48,6 +50,12 @@ export ROLLBAR_ACCESS_TOKEN=rbac_...
 
 # list account users
 ./bin/rollbar-cli users list
+
+# list all environments
+./bin/rollbar-cli environments list
+
+# list recent deploys
+./bin/rollbar-cli deploys list --page 1
 ```
 
 If you install with `go install` or `make install`, you can run `rollbar-cli ...` directly instead of `./bin/rollbar-cli`.
@@ -240,6 +248,57 @@ rollbar-cli users list --raw-json
 
 # NDJSON for scripting
 rollbar-cli users list --ndjson
+```
+
+### Deploys
+
+```bash
+# list deploys
+rollbar-cli deploys list
+
+# page through deploy history
+rollbar-cli deploys list --page 2 --limit 20 --json
+
+# get one deploy by id
+rollbar-cli deploys get 12345
+# or
+rollbar-cli deploys get --id 12345 --json
+
+# create a deploy record
+rollbar-cli deploys create \
+  --environment production \
+  --revision aabbcc1 \
+  --status started \
+  --comment "Deploy started from CI" \
+  --local-username ci-bot
+
+# create a deploy and associate a Rollbar username
+rollbar-cli deploys create \
+  --environment production \
+  --revision aabbcc1 \
+  --rollbar-username dave \
+  --json
+
+# update a deploy after completion
+rollbar-cli deploys update 12345 \
+  --status succeeded \
+  --json
+```
+
+### Environments
+
+```bash
+# list all environments across every API page
+rollbar-cli environments list
+
+# stable JSON output
+rollbar-cli environments list --json
+
+# raw Rollbar API page envelopes
+rollbar-cli environments list --raw-json
+
+# NDJSON for scripting
+rollbar-cli environments list --ndjson
 ```
 
 ## Shell Completion

@@ -209,6 +209,255 @@ func TestListUsers(t *testing.T) {
 	}
 }
 
+func TestListDeploys(t *testing.T) {
+	var gotPath string
+	var gotQuery url.Values
+	var gotToken string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
+		gotToken = r.Header.Get("X-Rollbar-Access-Token")
+		_, _ = w.Write([]byte(`{"err":0,"result":{"deploys":[{"id":"123","project_id":"42","environment":"production","revision":"aabbcc1","status":"succeeded","comment":"done","local_username":"ci-bot","rollbar_name":"alice","start_time":"1700000000","finish_time":"1700003600"}]}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListDeploys(context.Background(), ListDeploysOptions{
+		Page:  2,
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("unexpected list deploys error: %v", err)
+	}
+
+	if gotPath != "/api/1/deploys" {
+		t.Fatalf("unexpected deploys path: %s", gotPath)
+	}
+	if gotToken != "tok" {
+		t.Fatalf("unexpected token header: %q", gotToken)
+	}
+	if gotQuery.Get("page") != "2" || gotQuery.Get("limit") != "10" {
+		t.Fatalf("unexpected query: %#v", gotQuery)
+	}
+	if len(resp.Deploys) != 1 {
+		t.Fatalf("expected 1 deploy, got %d", len(resp.Deploys))
+	}
+	deploy := resp.Deploys[0]
+	if deploy.ID != 123 || deploy.ProjectID != 42 || deploy.RollbarUsername != "alice" || deploy.FinishTime != 1700003600 {
+		t.Fatalf("unexpected deploy: %#v", deploy)
+	}
+	if resp.Raw == nil || resp.Raw["err"] == nil {
+		t.Fatalf("expected raw response to be present: %#v", resp.Raw)
+	}
+}
+
+func TestGetDeployByID(t *testing.T) {
+	var gotPath string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"err":0,"result":{"deploy":{"id":123,"project_id":42,"environment":"production","revision":"aabbcc1","status":"started"}}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.GetDeployByID(context.Background(), 123)
+	if err != nil {
+		t.Fatalf("unexpected get deploy error: %v", err)
+	}
+
+	if gotPath != "/api/1/deploy/123" {
+		t.Fatalf("unexpected deploy path: %s", gotPath)
+	}
+	if resp.Deploy.ID != 123 || resp.Deploy.Environment != "production" || resp.Deploy.Status != "started" {
+		t.Fatalf("unexpected deploy: %#v", resp.Deploy)
+	}
+
+	if _, err := client.GetDeployByID(context.Background(), 0); err == nil {
+		t.Fatalf("expected invalid deploy id error")
+	}
+}
+
+func TestCreateDeploy(t *testing.T) {
+	var gotMethod string
+	var gotPath string
+	var gotContentType string
+	var gotBody map[string]any
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotContentType = r.Header.Get("Content-Type")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"err":0,"result":{"deploy":{"id":123,"environment":"production","revision":"aabbcc1","status":"started"}}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.CreateDeploy(context.Background(), map[string]any{
+		"environment":      "production",
+		"revision":         "aabbcc1",
+		"status":           "started",
+		"comment":          "Deploy started from CI",
+		"local_username":   "ci-bot",
+		"rollbar_username": "alice",
+		"start_time":       int64(1700000000),
+	})
+	if err != nil {
+		t.Fatalf("unexpected create deploy error: %v", err)
+	}
+
+	if gotMethod != http.MethodPost || gotPath != "/api/1/deploy" {
+		t.Fatalf("unexpected request: %s %s", gotMethod, gotPath)
+	}
+	if gotContentType != "application/json" {
+		t.Fatalf("unexpected content type: %q", gotContentType)
+	}
+	if gotBody["environment"] != "production" || gotBody["status"] != "started" || gotBody["rollbar_username"] != "alice" {
+		t.Fatalf("unexpected request body: %#v", gotBody)
+	}
+	if resp.Deploy.ID != 123 || resp.Deploy.Status != "started" {
+		t.Fatalf("unexpected deploy: %#v", resp.Deploy)
+	}
+}
+
+func TestUpdateDeployByID(t *testing.T) {
+	var gotMethod string
+	var gotPath string
+	var gotBody map[string]any
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"err":0,"result":{"deploy_id":123}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.UpdateDeployByID(context.Background(), 123, map[string]any{
+		"status":      "succeeded",
+		"finish_time": int64(1700003600),
+	})
+	if err != nil {
+		t.Fatalf("unexpected update deploy error: %v", err)
+	}
+
+	if gotMethod != http.MethodPatch || gotPath != "/api/1/deploy/123" {
+		t.Fatalf("unexpected request: %s %s", gotMethod, gotPath)
+	}
+	if gotBody["status"] != "succeeded" {
+		t.Fatalf("unexpected request body: %#v", gotBody)
+	}
+	if resp.Deploy.ID != 123 {
+		t.Fatalf("expected fallback deploy id, got %#v", resp.Deploy)
+	}
+}
+
+func TestListEnvironments(t *testing.T) {
+	var gotPaths []string
+	var gotPages []string
+	var gotToken string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.URL.Path)
+		gotPages = append(gotPages, r.URL.Query().Get("page"))
+		gotToken = r.Header.Get("X-Rollbar-Access-Token")
+
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[
+				{"id":"1","project_id":"88","environment":"production"},
+				{"id":2,"project_id":88,"name":"staging"},
+				{"id":3,"project_id":88,"environment":"preview-1"},
+				{"id":4,"project_id":88,"environment":"preview-2"},
+				{"id":5,"project_id":88,"environment":"preview-3"},
+				{"id":6,"project_id":88,"environment":"preview-4"},
+				{"id":7,"project_id":88,"environment":"preview-5"},
+				{"id":8,"project_id":88,"environment":"preview-6"},
+				{"id":9,"project_id":88,"environment":"preview-7"},
+				{"id":10,"project_id":88,"environment":"preview-8"},
+				{"id":11,"project_id":88,"environment":"preview-9"},
+				{"id":12,"project_id":88,"environment":"preview-10"},
+				{"id":13,"project_id":88,"environment":"preview-11"},
+				{"id":14,"project_id":88,"environment":"preview-12"},
+				{"id":15,"project_id":88,"environment":"preview-13"},
+				{"id":16,"project_id":88,"environment":"preview-14"},
+				{"id":17,"project_id":88,"environment":"preview-15"},
+				{"id":18,"project_id":88,"environment":"preview-16"},
+				{"id":19,"project_id":88,"environment":"preview-17"},
+				{"id":20,"project_id":88,"environment":"preview-18"}
+			]}}`))
+		case "2":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[{"id":21,"project_id":88,"environment":"sandbox"}]}}`))
+		case "3":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListEnvironments(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected list environments error: %v", err)
+	}
+
+	if len(gotPaths) != 3 || gotPaths[0] != "/api/1/environments" || gotPaths[1] != "/api/1/environments" || gotPaths[2] != "/api/1/environments" {
+		t.Fatalf("unexpected environment paths: %#v", gotPaths)
+	}
+	if len(gotPages) != 3 || gotPages[0] != "1" || gotPages[1] != "2" || gotPages[2] != "3" {
+		t.Fatalf("unexpected environment pages: %#v", gotPages)
+	}
+	if gotToken != "tok" {
+		t.Fatalf("unexpected token header: %q", gotToken)
+	}
+	if len(resp.Environments) != 21 {
+		t.Fatalf("expected 21 environments, got %d", len(resp.Environments))
+	}
+	if resp.Environments[0].ID != 1 || resp.Environments[0].ProjectID != 88 || resp.Environments[0].Name != "production" {
+		t.Fatalf("unexpected first environment: %#v", resp.Environments[0])
+	}
+	if resp.Environments[1].Name != "staging" {
+		t.Fatalf("expected fallback environment name, got %#v", resp.Environments[1])
+	}
+	if len(resp.RawPages) != 3 || resp.RawPages[0]["err"] == nil || resp.RawPages[2]["err"] == nil {
+		t.Fatalf("expected raw pages to be present: %#v", resp.RawPages)
+	}
+}
+
+func TestListEnvironmentsDirectArray(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_, _ = w.Write([]byte(`{"err":0,"result":[{"id":1,"project_id":88,"environment":"production"}]}`))
+		case "2":
+			_, _ = w.Write([]byte(`{"err":0,"result":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListEnvironments(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected list environments error: %v", err)
+	}
+	if len(resp.Environments) != 1 || resp.Environments[0].Name != "production" {
+		t.Fatalf("unexpected environments: %#v", resp.Environments)
+	}
+	if len(resp.RawPages) != 2 {
+		t.Fatalf("expected raw pages for data page and terminating empty page, got %#v", resp.RawPages)
+	}
+}
+
 func TestGetUserByID(t *testing.T) {
 	var gotPath string
 	var gotToken string
@@ -243,6 +492,7 @@ func TestGetUserByID(t *testing.T) {
 		t.Fatalf("expected invalid user id error")
 	}
 }
+
 func TestListItemInstances(t *testing.T) {
 	var gotPath string
 	var gotQuery url.Values
