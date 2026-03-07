@@ -31,7 +31,7 @@ If you want that full loop, you will also need a GitHub-oriented skill that can 
 [Yeet](https://github.com/openai/skills/tree/main/skills/.curated/yeet).
 
 The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) focuses on source map uploads and deployments.
-This project is a lightweight cross-platform binary alternative for querying and triaging Rollbar data.
+This project is a lightweight cross-platform single file binary alternative for querying and triaging Rollbar data.
 
 ## Quick Start
 
