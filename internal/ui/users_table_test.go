@@ -2,7 +2,6 @@ package ui
 
 import (
 	"bytes"
-	"os"
 	"strings"
 	"testing"
 
@@ -38,30 +37,11 @@ func TestRenderUser(t *testing.T) {
 }
 
 func TestRenderUsersEmpty(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-	defer func() {
-		os.Stdout = oldStdout
-	}()
-
-	done := make(chan string, 1)
-	go func() {
-		var buf bytes.Buffer
-		_, _ = buf.ReadFrom(r)
-		done <- buf.String()
-	}()
-
-	if err := RenderUsers(nil); err != nil {
-		t.Fatalf("RenderUsers() error = %v", err)
-	}
-	_ = w.Close()
-	out := <-done
-	_ = r.Close()
-
+	out := captureStdout(t, func() {
+		if err := RenderUsers(nil); err != nil {
+			t.Fatalf("RenderUsers() error = %v", err)
+		}
+	})
 	if !strings.Contains(out, "No users found") {
 		t.Fatalf("unexpected output: %q", out)
 	}
