@@ -23,7 +23,7 @@ jobs:
     outputs:
       merged_sha: ${{ steps.meta.outputs.merged_sha }}
       tag: ${{ steps.meta.outputs.tag }}
-      macos_release_enabled: ${{ steps.macos.outputs.enabled }}
+      build_matrix: ${{ steps.target_matrix.outputs.matrix }}
 
     steps:
       - name: Check out repository
@@ -66,6 +66,33 @@ jobs:
           if [ "${enabled}" != "true" ]; then
             echo "Skipping macOS release assets because Apple signing/notarization secrets are missing: ${missing_names}" >&2
           fi
+
+      - name: Select release targets
+        id: target_matrix
+        env:
+          MACOS_RELEASE_ENABLED: ${{ steps.macos.outputs.enabled }}
+        run: |
+          set -euo pipefail
+
+          if [ "${MACOS_RELEASE_ENABLED}" = "true" ]; then
+            matrix='{"include":[
+              {"goos":"darwin","goarch":"amd64","archive_ext":"zip","runs_on":"macos-latest"},
+              {"goos":"darwin","goarch":"arm64","archive_ext":"zip","runs_on":"macos-latest"},
+              {"goos":"linux","goarch":"amd64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
+              {"goos":"linux","goarch":"arm64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
+              {"goos":"windows","goarch":"amd64","archive_ext":"zip","runs_on":"ubuntu-latest"},
+              {"goos":"windows","goarch":"arm64","archive_ext":"zip","runs_on":"ubuntu-latest"}
+            ]}'
+          else
+            matrix='{"include":[
+              {"goos":"linux","goarch":"amd64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
+              {"goos":"linux","goarch":"arm64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
+              {"goos":"windows","goarch":"amd64","archive_ext":"zip","runs_on":"ubuntu-latest"},
+              {"goos":"windows","goarch":"arm64","archive_ext":"zip","runs_on":"ubuntu-latest"}
+            ]}'
+          fi
+
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
 
       - name: Compute tag and attach it to merged commit
         id: meta
@@ -135,36 +162,10 @@ jobs:
 
   build:
     needs: prepare
-    if: matrix.goos != 'darwin' || needs.prepare.outputs.macos_release_enabled == 'true'
     runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - goos: darwin
-            goarch: amd64
-            archive_ext: zip
-            runs_on: macos-latest
-          - goos: darwin
-            goarch: arm64
-            archive_ext: zip
-            runs_on: macos-latest
-          - goos: linux
-            goarch: amd64
-            archive_ext: tar.gz
-            runs_on: ubuntu-latest
-          - goos: linux
-            goarch: arm64
-            archive_ext: tar.gz
-            runs_on: ubuntu-latest
-          - goos: windows
-            goarch: amd64
-            archive_ext: zip
-            runs_on: ubuntu-latest
-          - goos: windows
-            goarch: arm64
-            archive_ext: zip
-            runs_on: ubuntu-latest
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
 
     steps:
       - name: Check out merged commit
