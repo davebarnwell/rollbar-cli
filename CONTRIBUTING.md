@@ -20,11 +20,14 @@ make build
 # build common macOS, Linux, and Windows binaries into bin/
 make build-cross
 
-# install the CLI with go install and install the AI skill
+# install the CLI with go install
 make install
 
 # install only the AI skill into common tool directories
 make install-skill
+
+# install both the CLI and the AI skill
+make install-all
 
 # show all available make targets
 make help

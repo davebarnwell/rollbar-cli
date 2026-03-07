@@ -42,11 +42,26 @@ make build
 ./bin/rollbar-cli --help
 ```
 
+### Install the CLI from this checkout
+
+```bash
+make install
+```
+
 ### Install the optional AI skill
 
 ```bash
 make install-skill
 ```
+
+### Install both the CLI and the AI skill
+
+```bash
+make install-all
+```
+
+`make install` installs only the `rollbar-cli` binary from your current checkout. `make install-skill` installs only
+the AI skill. Use `make install-all` if you want both.
 
 ## Quick start
 
