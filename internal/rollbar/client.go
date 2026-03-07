@@ -49,6 +49,12 @@ type User struct {
 	Email    string
 }
 
+type Environment struct {
+	ID        int64
+	ProjectID int64
+	Name      string
+}
+
 type StackFrame struct {
 	Filename string
 	Line     int64
@@ -78,6 +84,11 @@ type GetItemResponse struct {
 type ListUsersResponse struct {
 	Users []User
 	Raw   map[string]any
+}
+
+type ListEnvironmentsResponse struct {
+	Environments []Environment
+	RawPages     []map[string]any
 }
 
 type GetUserResponse struct {
@@ -114,6 +125,10 @@ type listUsersResult struct {
 	Users []json.RawMessage `json:"users"`
 }
 
+type listEnvironmentsResult struct {
+	Environments []json.RawMessage `json:"environments"`
+}
+
 type listItemInstancesResult struct {
 	Instances []json.RawMessage `json:"instances"`
 }
@@ -122,6 +137,8 @@ type apiResponse struct {
 	Raw      map[string]any
 	Envelope apiEnvelope
 }
+
+const environmentsPageSize = 20
 
 func (c *Client) doJSON(ctx context.Context, method string, path string, query url.Values, payload any) (*apiResponse, error) {
 	endpoint, err := url.Parse(c.baseURL + path)
@@ -323,6 +340,63 @@ func (c *Client) ListUsers(ctx context.Context) (*ListUsersResponse, error) {
 	}
 
 	return &ListUsersResponse{Users: users, Raw: resp.Raw}, nil
+}
+
+func (c *Client) ListEnvironments(ctx context.Context) (*ListEnvironmentsResponse, error) {
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	environments := make([]Environment, 0)
+	rawPages := make([]map[string]any, 0)
+
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+
+		resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/environments", query, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var result listEnvironmentsResult
+		if len(resp.Envelope.Result) > 0 {
+			if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
+				var directEnvironments []json.RawMessage
+				if directErr := json.Unmarshal(resp.Envelope.Result, &directEnvironments); directErr == nil {
+					result.Environments = directEnvironments
+				} else {
+					return nil, fmt.Errorf("parse result.environments: %w", err)
+				}
+			}
+			if len(result.Environments) == 0 {
+				var directEnvironments []json.RawMessage
+				if err := json.Unmarshal(resp.Envelope.Result, &directEnvironments); err == nil {
+					result.Environments = directEnvironments
+				}
+			}
+		}
+
+		pageEnvironments := make([]Environment, 0, len(result.Environments))
+		for idx, rawEnvironment := range result.Environments {
+			environment, err := normalizeEnvironment(rawEnvironment)
+			if err != nil {
+				return nil, fmt.Errorf("decode environment %d: %w", idx, err)
+			}
+			pageEnvironments = append(pageEnvironments, environment)
+		}
+
+		if page == 1 || len(pageEnvironments) > 0 {
+			rawPages = append(rawPages, resp.Raw)
+		}
+		environments = append(environments, pageEnvironments...)
+
+		if len(pageEnvironments) < environmentsPageSize {
+			break
+		}
+	}
+
+	return &ListEnvironmentsResponse{Environments: environments, RawPages: rawPages}, nil
 }
 
 func (c *Client) GetUserByID(ctx context.Context, id int64) (*GetUserResponse, error) {
@@ -574,6 +648,26 @@ func normalizeUserMap(m map[string]any) User {
 		ID:       firstInt64(m, "id", "user_id"),
 		Username: firstString(m, "username", "name"),
 		Email:    getString(m, "email"),
+	}
+}
+
+func normalizeEnvironment(rawEnvironment json.RawMessage) (Environment, error) {
+	var m map[string]any
+	if err := json.Unmarshal(rawEnvironment, &m); err != nil {
+		return Environment{}, err
+	}
+	return normalizeEnvironmentMap(m), nil
+}
+
+func normalizeEnvironmentMap(m map[string]any) Environment {
+	if m == nil {
+		return Environment{}
+	}
+
+	return Environment{
+		ID:        firstInt64(m, "id", "environment_id"),
+		ProjectID: firstInt64(m, "project_id", "projectId"),
+		Name:      firstString(m, "environment", "name"),
 	}
 }
 

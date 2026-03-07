@@ -209,6 +209,93 @@ func TestListUsers(t *testing.T) {
 	}
 }
 
+func TestListEnvironments(t *testing.T) {
+	var gotPaths []string
+	var gotPages []string
+	var gotToken string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.URL.Path)
+		gotPages = append(gotPages, r.URL.Query().Get("page"))
+		gotToken = r.Header.Get("X-Rollbar-Access-Token")
+
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[
+				{"id":"1","project_id":"88","environment":"production"},
+				{"id":2,"project_id":88,"name":"staging"},
+				{"id":3,"project_id":88,"environment":"preview-1"},
+				{"id":4,"project_id":88,"environment":"preview-2"},
+				{"id":5,"project_id":88,"environment":"preview-3"},
+				{"id":6,"project_id":88,"environment":"preview-4"},
+				{"id":7,"project_id":88,"environment":"preview-5"},
+				{"id":8,"project_id":88,"environment":"preview-6"},
+				{"id":9,"project_id":88,"environment":"preview-7"},
+				{"id":10,"project_id":88,"environment":"preview-8"},
+				{"id":11,"project_id":88,"environment":"preview-9"},
+				{"id":12,"project_id":88,"environment":"preview-10"},
+				{"id":13,"project_id":88,"environment":"preview-11"},
+				{"id":14,"project_id":88,"environment":"preview-12"},
+				{"id":15,"project_id":88,"environment":"preview-13"},
+				{"id":16,"project_id":88,"environment":"preview-14"},
+				{"id":17,"project_id":88,"environment":"preview-15"},
+				{"id":18,"project_id":88,"environment":"preview-16"},
+				{"id":19,"project_id":88,"environment":"preview-17"},
+				{"id":20,"project_id":88,"environment":"preview-18"}
+			]}}`))
+		case "2":
+			_, _ = w.Write([]byte(`{"err":0,"result":{"environments":[{"id":21,"project_id":88,"environment":"sandbox"}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListEnvironments(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected list environments error: %v", err)
+	}
+
+	if len(gotPaths) != 2 || gotPaths[0] != "/api/1/environments" || gotPaths[1] != "/api/1/environments" {
+		t.Fatalf("unexpected environment paths: %#v", gotPaths)
+	}
+	if len(gotPages) != 2 || gotPages[0] != "1" || gotPages[1] != "2" {
+		t.Fatalf("unexpected environment pages: %#v", gotPages)
+	}
+	if gotToken != "tok" {
+		t.Fatalf("unexpected token header: %q", gotToken)
+	}
+	if len(resp.Environments) != 21 {
+		t.Fatalf("expected 21 environments, got %d", len(resp.Environments))
+	}
+	if resp.Environments[0].ID != 1 || resp.Environments[0].ProjectID != 88 || resp.Environments[0].Name != "production" {
+		t.Fatalf("unexpected first environment: %#v", resp.Environments[0])
+	}
+	if resp.Environments[1].Name != "staging" {
+		t.Fatalf("expected fallback environment name, got %#v", resp.Environments[1])
+	}
+	if len(resp.RawPages) != 2 || resp.RawPages[0]["err"] == nil {
+		t.Fatalf("expected raw pages to be present: %#v", resp.RawPages)
+	}
+}
+
+func TestListEnvironmentsDirectArray(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"err":0,"result":[{"id":1,"project_id":88,"environment":"production"}]}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListEnvironments(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected list environments error: %v", err)
+	}
+	if len(resp.Environments) != 1 || resp.Environments[0].Name != "production" {
+		t.Fatalf("unexpected environments: %#v", resp.Environments)
+	}
+}
+
 func TestGetUserByID(t *testing.T) {
 	var gotPath string
 	var gotToken string
@@ -243,6 +330,7 @@ func TestGetUserByID(t *testing.T) {
 		t.Fatalf("expected invalid user id error")
 	}
 }
+
 func TestListItemInstances(t *testing.T) {
 	var gotPath string
 	var gotQuery url.Values
