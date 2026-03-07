@@ -18,6 +18,7 @@ Use this skill to quickly find and triage Rollbar issues with `rollbar-cli`.
 - You want recent issues in stable JSON or NDJSON for automation or triage notes.
 - You want to narrow by environment and severity level.
 - You need to inspect raw occurrences for a specific item or fetch one occurrence directly.
+- You need to look up Rollbar account users before assigning an item.
 
 ## Prerequisites
 
@@ -25,6 +26,7 @@ Use this skill to quickly find and triage Rollbar issues with `rollbar-cli`.
 - Auth token is set:
     - `export ROLLBAR_ACCESS_TOKEN=...`
     - or pass `--token ...`
+- `users list` uses the account-level users endpoint, so the token must be able to read account users.
 - Optional config profiles are supported via `--config`, `--profile`, `ROLLBAR_CLI_CONFIG`, or `~/.config/rollbar-cli/config.json`.
 
 ## Core Commands
@@ -164,6 +166,41 @@ rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 rollbar-cli occurences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
 ```
 
+### 13) List account users
+
+```bash
+# default text output
+rollbar-cli users list
+
+# stable JSON
+rollbar-cli users list --json
+
+# raw Rollbar envelope
+rollbar-cli users list --raw-json
+
+# NDJSON for downstream tooling
+rollbar-cli users list --ndjson
+
+# narrow text columns
+rollbar-cli users list --fields id,username,email --no-headers
+```
+
+### 14) Get one user by ID
+
+```bash
+# positional id
+rollbar-cli users get 7 --json
+
+# or explicit flag
+rollbar-cli users get --id 7
+
+# NDJSON for downstream tooling
+rollbar-cli users get --id 7 --ndjson
+
+# raw Rollbar envelope
+rollbar-cli users get --id 7 --raw-json
+```
+
 ## Optional: Watch Active Issues During Triage
 
 ```bash
@@ -190,7 +227,8 @@ rollbar-cli items list --status active --json \
 2. Narrow with `--last`, `--since`, `--sort`, and `--limit`.
 3. Open top counters/IDs with `rollbar-cli items get --instances` for stack context.
 4. Use `rollbar-cli occurrences list` when you want to inspect occurrence-level payloads for an item.
-5. Use `items resolve|mute|assign|snooze` for common triage actions.
+5. Use `rollbar-cli users list` to find candidate assignee IDs before assigning items.
+6. Use `items resolve|mute|assign|snooze` for common triage actions.
 
 ## Example Follow-up Commands
 
@@ -200,6 +238,8 @@ rollbar-cli items get --id 275123456 --instances --payload summary --payload-sec
 rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --raw-json
 rollbar-cli occurrences list --item-id 275123456 --ndjson
 rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
+rollbar-cli users list --json
+rollbar-cli users get --id 7 --json
 rollbar-cli items resolve --id 275123456 --resolved-in-version aabbcc1
 rollbar-cli items assign --uuid 01234567-89ab-cdef-0123-456789abcdef --assigned-user-id 321
 ```

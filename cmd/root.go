@@ -48,6 +48,7 @@ func newRootCmd() *cobra.Command {
 
 	rootCmd.AddCommand(newItemsCmd(cfg))
 	rootCmd.AddCommand(newOccurrencesCmd(cfg))
+	rootCmd.AddCommand(newUsersCmd(cfg))
 	rootCmd.AddCommand(newCompletionCmd())
 
 	return rootCmd

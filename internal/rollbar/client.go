@@ -43,6 +43,12 @@ type Item struct {
 	LastOccurrenceTimestamp int64
 }
 
+type User struct {
+	ID       int64
+	Username string
+	Email    string
+}
+
 type StackFrame struct {
 	Filename string
 	Line     int64
@@ -69,6 +75,16 @@ type GetItemResponse struct {
 	Raw  map[string]any
 }
 
+type ListUsersResponse struct {
+	Users []User
+	Raw   map[string]any
+}
+
+type GetUserResponse struct {
+	User User
+	Raw  map[string]any
+}
+
 type ListItemInstancesResponse struct {
 	Instances []ItemInstance
 	Raw       map[string]any
@@ -92,6 +108,10 @@ type apiEnvelope struct {
 
 type listItemsResult struct {
 	Items []json.RawMessage `json:"items"`
+}
+
+type listUsersResult struct {
+	Users []json.RawMessage `json:"users"`
 }
 
 type listItemInstancesResult struct {
@@ -263,6 +283,79 @@ func (c *Client) GetItemByUUID(ctx context.Context, uuid string) (*GetItemRespon
 		return nil, fmt.Errorf("invalid UUID: must not be empty")
 	}
 	return c.getItem(ctx, uuid)
+}
+
+func (c *Client) ListUsers(ctx context.Context) (*ListUsersResponse, error) {
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/users", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result listUsersResult
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
+			var directUsers []json.RawMessage
+			if directErr := json.Unmarshal(resp.Envelope.Result, &directUsers); directErr == nil {
+				result.Users = directUsers
+			} else {
+				return nil, fmt.Errorf("parse result.users: %w", err)
+			}
+		}
+		if len(result.Users) == 0 {
+			var directUsers []json.RawMessage
+			if err := json.Unmarshal(resp.Envelope.Result, &directUsers); err == nil {
+				result.Users = directUsers
+			}
+		}
+	}
+
+	users := make([]User, 0, len(result.Users))
+	for idx, rawUser := range result.Users {
+		user, err := normalizeUser(rawUser)
+		if err != nil {
+			return nil, fmt.Errorf("decode user %d: %w", idx, err)
+		}
+		users = append(users, user)
+	}
+
+	return &ListUsersResponse{Users: users, Raw: resp.Raw}, nil
+}
+
+func (c *Client) GetUserByID(ctx context.Context, id int64) (*GetUserResponse, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid user id: must be > 0")
+	}
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("missing access token")
+	}
+
+	resp, err := c.doJSON(ctx, http.MethodGet, "/api/1/user/"+strconv.FormatInt(id, 10), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result map[string]any
+	if len(resp.Envelope.Result) > 0 {
+		if err := json.Unmarshal(resp.Envelope.Result, &result); err != nil {
+			return nil, fmt.Errorf("parse user result: %w", err)
+		}
+	}
+
+	userData := result
+	if v, ok := result["user"]; ok {
+		if nested, ok := v.(map[string]any); ok {
+			userData = nested
+		}
+	}
+
+	return &GetUserResponse{
+		User: normalizeUserMap(userData),
+		Raw:  resp.Raw,
+	}, nil
 }
 
 func (c *Client) ListItemInstances(ctx context.Context, identifier string, page int) (*ListItemInstancesResponse, error) {
@@ -462,6 +555,26 @@ func normalizeItemMap(m map[string]any) Item {
 	}
 
 	return item
+}
+
+func normalizeUser(rawUser json.RawMessage) (User, error) {
+	var m map[string]any
+	if err := json.Unmarshal(rawUser, &m); err != nil {
+		return User{}, err
+	}
+	return normalizeUserMap(m), nil
+}
+
+func normalizeUserMap(m map[string]any) User {
+	if m == nil {
+		return User{}
+	}
+
+	return User{
+		ID:       firstInt64(m, "id", "user_id"),
+		Username: firstString(m, "username", "name"),
+		Email:    getString(m, "email"),
+	}
 }
 
 func normalizeInstance(rawInstance json.RawMessage) (ItemInstance, error) {
