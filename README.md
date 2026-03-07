@@ -1,5 +1,8 @@
 # rollbar-cli
 
+[![Release](https://img.shields.io/github/v/release/davebarnwell/rollbar-cli?display_name=tag)](https://github.com/davebarnwell/rollbar-cli/releases)
+[![CI](https://github.com/davebarnwell/rollbar-cli/actions/workflows/pr-tests.yml/badge.svg?branch=main)](https://github.com/davebarnwell/rollbar-cli/actions/workflows/pr-tests.yml)
+
 Query, triage, and automate [Rollbar](https://rollbar.com) from the terminal.
 
 `rollbar-cli` is a single-binary CLI for engineers who want fast access to Rollbar items, occurrences, deploys,
