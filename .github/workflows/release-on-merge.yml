@@ -99,29 +99,35 @@ jobs:
 
   build:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - goos: darwin
             goarch: amd64
-            archive_ext: tar.gz
+            archive_ext: zip
+            runs_on: macos-latest
           - goos: darwin
             goarch: arm64
-            archive_ext: tar.gz
+            archive_ext: zip
+            runs_on: macos-latest
           - goos: linux
             goarch: amd64
             archive_ext: tar.gz
+            runs_on: ubuntu-latest
           - goos: linux
             goarch: arm64
             archive_ext: tar.gz
+            runs_on: ubuntu-latest
           - goos: windows
             goarch: amd64
             archive_ext: zip
+            runs_on: ubuntu-latest
           - goos: windows
             goarch: arm64
             archive_ext: zip
+            runs_on: ubuntu-latest
 
     steps:
       - name: Check out merged commit
@@ -135,7 +141,64 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build archive
+      - name: Prepare macOS signing credentials
+        if: matrix.goos == 'darwin'
+        env:
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_PRIVATE_KEY_BASE64: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for name in \
+            APPLE_KEYCHAIN_PASSWORD \
+            APPLE_NOTARY_ISSUER_ID \
+            APPLE_NOTARY_KEY_ID \
+            APPLE_NOTARY_PRIVATE_KEY_BASE64 \
+            APPLE_SIGNING_CERTIFICATE_P12_BASE64 \
+            APPLE_SIGNING_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: ${name}" >&2
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+          signing_dir="${RUNNER_TEMP}/apple-signing"
+          cert_path="${signing_dir}/signing-cert.p12"
+          key_path="${signing_dir}/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
+
+          mkdir -p "${signing_dir}"
+          printf '%s' "${APPLE_SIGNING_CERTIFICATE_P12_BASE64}" | base64 -D > "${cert_path}"
+          printf '%s' "${APPLE_NOTARY_PRIVATE_KEY_BASE64}" | base64 -D > "${key_path}"
+
+          security create-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security import "${cert_path}" -P "${APPLE_SIGNING_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}"
+          security default-keychain -d user -s "${keychain_path}"
+          security find-identity -v -p codesigning "${keychain_path}"
+
+          {
+            echo "APPLE_KEYCHAIN_PATH=${keychain_path}"
+            echo "APPLE_NOTARY_KEY_PATH=${key_path}"
+            echo "APPLE_SIGNING_DIR=${signing_dir}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Build and package archive
+        if: matrix.goos != 'darwin'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -168,12 +231,58 @@ jobs:
 
           rm -rf "${stage_dir}"
 
+      - name: Build, sign, and notarize macOS archive
+        if: matrix.goos == 'darwin'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          bin_name="${BINARY_NAME}"
+          version="${TAG#${TAG_PREFIX}}"
+          asset_name="${BINARY_NAME}_${version}_${GOOS}_${GOARCH}"
+          stage_dir="dist/${asset_name}"
+          archive_path="dist/${asset_name}.zip"
+          mkdir -p "${stage_dir}"
+
+          CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" go build -trimpath -ldflags="-s -w" -o "${stage_dir}/${bin_name}" .
+          cp README.md LICENSE "${stage_dir}/"
+
+          codesign --force --options runtime --timestamp --sign "${APPLE_SIGNING_IDENTITY}" "${stage_dir}/${bin_name}"
+          codesign --verify --verbose=2 "${stage_dir}/${bin_name}"
+
+          ditto -c -k --keepParent "${stage_dir}" "${archive_path}"
+
+          xcrun notarytool submit "${archive_path}" \
+            --key "${APPLE_NOTARY_KEY_PATH}" \
+            --key-id "${APPLE_NOTARY_KEY_ID}" \
+            --issuer "${APPLE_NOTARY_ISSUER_ID}" \
+            --wait
+
+          rm -rf "${stage_dir}"
+
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
           if-no-files-found: error
+
+      - name: Clean up macOS signing credentials
+        if: always() && matrix.goos == 'darwin'
+        run: |
+          set -euo pipefail
+
+          if [ -n "${APPLE_KEYCHAIN_PATH:-}" ] && [ -f "${APPLE_KEYCHAIN_PATH}" ]; then
+            security delete-keychain "${APPLE_KEYCHAIN_PATH}" || true
+          fi
+
+          rm -rf "${APPLE_SIGNING_DIR:-}"
 
   publish:
     needs:
