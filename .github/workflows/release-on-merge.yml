@@ -75,21 +75,9 @@ jobs:
           set -euo pipefail
 
           if [ "${MACOS_RELEASE_ENABLED}" = "true" ]; then
-            matrix='{"include":[
-              {"goos":"darwin","goarch":"amd64","archive_ext":"zip","runs_on":"macos-latest"},
-              {"goos":"darwin","goarch":"arm64","archive_ext":"zip","runs_on":"macos-latest"},
-              {"goos":"linux","goarch":"amd64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
-              {"goos":"linux","goarch":"arm64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
-              {"goos":"windows","goarch":"amd64","archive_ext":"zip","runs_on":"ubuntu-latest"},
-              {"goos":"windows","goarch":"arm64","archive_ext":"zip","runs_on":"ubuntu-latest"}
-            ]}'
+            matrix='{"include":[{"goos":"darwin","goarch":"amd64","archive_ext":"zip","runs_on":"macos-latest"},{"goos":"darwin","goarch":"arm64","archive_ext":"zip","runs_on":"macos-latest"},{"goos":"linux","goarch":"amd64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},{"goos":"linux","goarch":"arm64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},{"goos":"windows","goarch":"amd64","archive_ext":"zip","runs_on":"ubuntu-latest"},{"goos":"windows","goarch":"arm64","archive_ext":"zip","runs_on":"ubuntu-latest"}]}'
           else
-            matrix='{"include":[
-              {"goos":"linux","goarch":"amd64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
-              {"goos":"linux","goarch":"arm64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},
-              {"goos":"windows","goarch":"amd64","archive_ext":"zip","runs_on":"ubuntu-latest"},
-              {"goos":"windows","goarch":"arm64","archive_ext":"zip","runs_on":"ubuntu-latest"}
-            ]}'
+            matrix='{"include":[{"goos":"linux","goarch":"amd64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},{"goos":"linux","goarch":"arm64","archive_ext":"tar.gz","runs_on":"ubuntu-latest"},{"goos":"windows","goarch":"amd64","archive_ext":"zip","runs_on":"ubuntu-latest"},{"goos":"windows","goarch":"arm64","archive_ext":"zip","runs_on":"ubuntu-latest"}]}'
           fi
 
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
