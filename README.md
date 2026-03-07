@@ -31,6 +31,20 @@ from [GitHub Releases](https://github.com/davebarnwell/rollbar-cli/releases).
 
 ### Go install
 
+Install Go first if `go` is not already available on your machine.
+
+- macOS: `brew install go` or install the official package from [go.dev/dl](https://go.dev/dl/)
+- Linux: use your distro package manager or install from [go.dev/dl](https://go.dev/dl/)
+- Windows: install from [go.dev/dl](https://go.dev/dl/)
+
+Verify the install:
+
+```bash
+go version
+```
+
+Then install `rollbar-cli`:
+
 ```bash
 go install github.com/davebarnwell/rollbar-cli@latest
 ```
