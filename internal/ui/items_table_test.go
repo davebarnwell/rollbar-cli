@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"rollbar-cli/internal/rollbar"
+	"github.com/davebarnwell/rollbar-cli/internal/rollbar"
 )
 
 func captureStdout(t *testing.T, fn func()) string {

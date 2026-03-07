@@ -17,7 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 
-	"rollbar-cli/internal/rollbar"
+	"github.com/davebarnwell/rollbar-cli/internal/rollbar"
 )
 
 type ItemListRenderOptions struct {

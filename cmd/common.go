@@ -10,7 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"rollbar-cli/internal/rollbar"
+	"github.com/davebarnwell/rollbar-cli/internal/rollbar"
 )
 
 type payloadOptions struct {

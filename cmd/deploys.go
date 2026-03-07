@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"rollbar-cli/internal/rollbar"
-	"rollbar-cli/internal/ui"
+	"github.com/davebarnwell/rollbar-cli/internal/rollbar"
+	"github.com/davebarnwell/rollbar-cli/internal/ui"
 )
 
 var validDeployStatuses = map[string]struct{}{

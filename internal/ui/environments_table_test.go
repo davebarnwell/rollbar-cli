@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"rollbar-cli/internal/rollbar"
+	"github.com/davebarnwell/rollbar-cli/internal/rollbar"
 )
 
 func TestRenderEnvironmentsPlain(t *testing.T) {

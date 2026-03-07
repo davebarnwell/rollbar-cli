@@ -1,4 +1,4 @@
-module rollbar-cli
+module github.com/davebarnwell/rollbar-cli
 
 go 1.23.0
 
