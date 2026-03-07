@@ -14,14 +14,14 @@ all: build
 
 help:
 	@echo "Targets:"
-	@echo "  make build       Build $(BINARY) into $(BUILD_DIR)/"
-	@echo "  make build-cross Build common cross-platform binaries into $(BUILD_DIR)/"
-	@echo "  make install     Install $(BINARY) with 'go install'"
-	@echo "  make install-skill  Install .ai skill into common AI tool skill dirs"
-	@echo "  make install-all Install $(BINARY) and the .ai skill"
-	@echo "  make test        Run unit tests"
-	@echo "  make test-cover  Run unit tests with coverage"
-	@echo "  make clean       Remove build artifacts"
+	@printf "  %-18s %s\n" "make build" "Build $(BINARY) into $(BUILD_DIR)/"
+	@printf "  %-18s %s\n" "make build-cross" "Build common cross-platform binaries into $(BUILD_DIR)/"
+	@printf "  %-18s %s\n" "make install" "Install $(BINARY) with 'go install'"
+	@printf "  %-18s %s\n" "make install-skill" "Install .ai skill into common AI tool skill dirs"
+	@printf "  %-18s %s\n" "make install-all" "Install $(BINARY) and the .ai skill"
+	@printf "  %-18s %s\n" "make test" "Run unit tests"
+	@printf "  %-18s %s\n" "make test-cover" "Run unit tests with coverage"
+	@printf "  %-18s %s\n" "make clean" "Remove build artifacts"
 
 build:
 	@mkdir -p $(BUILD_DIR)
