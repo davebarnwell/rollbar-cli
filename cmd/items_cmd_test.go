@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"rollbar-cli/internal/ui"
+	"github.com/davebarnwell/rollbar-cli/internal/ui"
 )
 
 func TestItemsListCommandJSON(t *testing.T) {

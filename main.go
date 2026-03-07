@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"rollbar-cli/cmd"
+	"github.com/davebarnwell/rollbar-cli/cmd"
 )
 
 func run() int {

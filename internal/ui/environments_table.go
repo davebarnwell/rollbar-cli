@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"rollbar-cli/internal/rollbar"
+	"github.com/davebarnwell/rollbar-cli/internal/rollbar"
 )
 
 type EnvironmentRenderOptions struct {
