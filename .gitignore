@@ -173,3 +173,30 @@ Network Trash Folder
 Temporary Items
 .apdisk
 bin/
+
+### Common editor and tooling patterns
+# VS Code
+.vscode/
+.history/
+
+# Visual Studio
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userossc
+*.sln.docstates
+
+# Vim and other editor swap/backup files
+*.swp
+*.swo
+*.bak
+
+# Local environment tooling
+.direnv/
+.envrc
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
