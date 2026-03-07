@@ -35,7 +35,7 @@ from [GitHub Releases](https://github.com/davebarnwell/rollbar-cli/releases).
 go install github.com/davebarnwell/rollbar-cli@latest
 ```
 
-### Build from source
+### Or Build from source
 
 ```bash
 git clone https://github.com/davebarnwell/rollbar-cli.git
