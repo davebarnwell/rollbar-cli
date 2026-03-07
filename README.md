@@ -261,6 +261,23 @@ go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out
 ```
 
+## Release Automation
+
+Merged pull requests trigger `.github/workflows/release-on-merge.yml`, which now signs and notarizes the macOS release archives on `macos-latest`.
+
+Required GitHub Actions secrets for macOS releases:
+
+- `APPLE_SIGNING_CERTIFICATE_P12_BASE64`: base64-encoded Developer ID Application certificate export
+- `APPLE_SIGNING_CERTIFICATE_PASSWORD`: password for the `.p12`
+- `APPLE_SIGNING_IDENTITY`: full codesigning identity name, for example `Developer ID Application: Example, Inc. (TEAMID)`
+- `APPLE_KEYCHAIN_PASSWORD`: temporary keychain password used during the workflow run
+- `APPLE_NOTARY_KEY_ID`: App Store Connect API key ID for notarization
+- `APPLE_NOTARY_ISSUER_ID`: App Store Connect issuer ID for notarization
+- `APPLE_NOTARY_PRIVATE_KEY_BASE64`: base64-encoded contents of the App Store Connect `.p8` key
+
+macOS assets are published as `.zip` archives instead of `.tar.gz` so they can be submitted to Apple's notarization service before release.
+If any of those secrets are missing, the release workflow skips macOS assets and still publishes the Linux and Windows artifacts.
+
 ## Notes
 
 - Auth uses the `X-Rollbar-Access-Token` header.
