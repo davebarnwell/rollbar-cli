@@ -1,101 +1,114 @@
 # rollbar-cli
 
-`rollbar-cli` is a Go CLI for querying and triaging [Rollbar](https://rollbar.com) items and occurrences.
-It supports terminal-friendly views, stable JSON and NDJSON output for automation, and common item actions such as
-resolve, mute, assign, snooze, and update.
+Query, triage, and automate [Rollbar](https://rollbar.com) from the terminal.
 
-This repo also includes an AI skill at `.ai/skills/rollbar-cli` so coding agents can use the CLI from natural-language
-workflows.
+`rollbar-cli` is a single-binary CLI for engineers who want fast access to Rollbar items, occurrences, deploys,
+environments, and users without living in the browser. It supports terminal-friendly views for manual triage and stable
+JSON or NDJSON output for scripts, CI jobs, and agent workflows.
 
-## What it does
+## Why use it
 
-- List Rollbar items with environment, level, status, time, sort, and paging filters
-- Fetch a single item by ID or UUID, optionally with associated occurrences
-- List or fetch occurrences for an item
-- List, fetch, create, and update deploy records
-- List all project environments
-- List account users
-- Update item status, title, level, assignment, and snooze state
-- Render stable JSON, raw API JSON, NDJSON, or text/TUI output
-- Install an agent skill for Codex, Claude Code, Cursor, Windsurf, and similar tools
+- Find active production errors quickly with filtering by status, level, environment, time range, sort order, and
+  paging.
+- Inspect an item and its occurrences from one command.
+- Resolve, mute, assign, snooze, or update items without opening the Rollbar UI.
+- Export normalised JSON, raw API JSON, or NDJSON for automation.
+- Track deploys and inspect account metadata from the same CLI.
+- Install an optional AI skill for Codex, Claude Code, Cursor, Windsurf, and similar tools.
 
-## Why
+The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) is primarily aimed at source maps and deployment
+workflows. `rollbar-cli` is aimed at querying and triaging Rollbar data during development and incident response.
 
-The main use case is incident triage, both manually and through agent workflows.
+## Install
 
-For example, a scheduled coding agent can run a prompt like:
+### Prebuilt binaries
 
-> Find all unresolved Rollbar errors from the last 24 hours and create fixes with associated PRs.
+Download the latest archive for your platform
+from [GitHub Releases](https://github.com/davebarnwell/rollbar-cli/releases).
 
-If you want that full loop, you will also need a GitHub-oriented skill that can open pull requests, such as
-[Yeet](https://github.com/openai/skills/tree/main/skills/.curated/yeet).
-
-The official [Rollbar CLI](https://github.com/rollbar/rollbar-cli) focuses on source map uploads and deployments.
-This project is a lightweight cross-platform single file binary alternative for querying and triaging Rollbar data.
-
-## Quick Start
+### Go install
 
 ```bash
-# build locally
-make build
+go install github.com/davebarnwell/rollbar-cli@latest
+```
 
-# authenticate for this shell
+### Build from source
+
+```bash
+make build
+./bin/rollbar-cli --help
+```
+
+### Install the optional AI skill
+
+```bash
+make install-skill
+```
+
+## Quick start
+
+```bash
 export ROLLBAR_ACCESS_TOKEN=rbac_...
 
-# list recent active production items
-./bin/rollbar-cli items list --status active --environment production
+# list active production issues
+rollbar-cli items list --status active --environment production
 
-# inspect one item with occurrences
-./bin/rollbar-cli items get --id 275123456 --instances --json
+# inspect one item with occurrence details
+rollbar-cli items get --id 275123456 --instances --json
 
-# list account users
-./bin/rollbar-cli users list
+# take action on an item
+rollbar-cli items resolve --id 275123456 --resolved-in-version aabbcc1
 
-# list all environments
-./bin/rollbar-cli environments list
-
-# list recent deploys
-./bin/rollbar-cli deploys list --page 1
+# inspect recent deploys
+rollbar-cli deploys list --limit 10
 ```
 
-If you install with `go install` or `make install`, you can run `rollbar-cli ...` directly instead of
-`./bin/rollbar-cli`.
+If you built locally with `make build`, use `./bin/rollbar-cli ...` instead.
 
-## Build and Install
+## Common workflows
+
+### Triage active errors
 
 ```bash
-# build binary into bin/
-make build
-
-# build common macOS, Linux, and Windows binaries into bin/
-make build-cross
-
-# install skill into common AI tool skill directories
-make install-skill
-
-# install skill + CLI with go install
-make install
+rollbar-cli items list \
+  --status active \
+  --environment production \
+  --level error \
+  --last 24h \
+  --sort last_occurrence_timestamp_desc
 ```
 
-Manual build:
+### Inspect one item with occurrences
 
 ```bash
-go mod tidy
-go build -o rollbar-cli .
+rollbar-cli items get --id 275123456 --instances --payload summary --payload-section request
 ```
 
-Show all make targets:
+### Watch during an incident
 
 ```bash
-make help
+rollbar-cli items watch --status active --environment production --interval 30s --count 10
 ```
 
-## Authentication and Config
+### Script against JSON output
 
-Provide a Rollbar project token with `read` scope for queries, or `read` and `write` if you want to update items.
-For `users list`, use an account-scoped token that can read account users.
+```bash
+rollbar-cli items list --status active --json
+rollbar-cli items list --status active --ndjson --limit 20
+rollbar-cli items list --status active --raw-json
+```
 
-Supported auth/config inputs:
+More examples: [EXAMPLES.md](./EXAMPLES.md)
+
+## Authentication and config
+
+Provide a Rollbar token with the scopes needed for the command you want to run.
+
+- Queries generally need a project token with `read` scope.
+- Item updates need a token with `read` and `write` scope.
+- `users list` needs an account-scoped token that can read account users.
+
+Configuration sources:
 
 - `--token`
 - `ROLLBAR_ACCESS_TOKEN`
@@ -108,9 +121,7 @@ Additional environment overrides:
 - `ROLLBAR_BASE_URL`
 - `ROLLBAR_TIMEOUT`
 
-**NOTE:** Rollbar access tokens can be account level or project level, which is where the config profile can be useful.
-
-Example config file:
+Example config:
 
 ```json
 {
@@ -127,261 +138,61 @@ Example config file:
 
 Flag values take precedence over config and environment defaults.
 
-## AI Skill
+## Output modes
 
-This repo ships with a Rollbar skill for agent workflows:
+Use the output format that matches the job:
 
-- skill path: `.ai/skills/rollbar-cli/SKILL.md`
-- install command: `make install-skill`
+- default text/TUI output for interactive triage
+- `--json` for normalized, stable CLI JSON
+- `--raw-json` for Rollbar API envelopes
+- `--ndjson` for line-oriented pipelines
 
-The skill documents common triage flows and gives agents a stable set of CLI commands to use when investigating
-Rollbar issues.
+The item TUI shows item IDs and supports `enter` to load occurrences, `o` to toggle details, `y` to copy the item ID,
+and `r` or `m` to resolve or mute the selected row.
 
-## Usage
+## Commands
 
-### Items
+Top-level command groups:
 
-```bash
-# text/TUI output
-rollbar-cli items list --status active --environment production
+- `items`
+- `occurrences`
+- `deploys`
+- `environments`
+- `users`
+- `completion`
 
-# stable JSON output
-rollbar-cli items list --json
+For full examples and command patterns, see [EXAMPLES.md](./EXAMPLES.md).
 
-# raw Rollbar API JSON
-rollbar-cli items list --raw-json
-
-# NDJSON for scripting
-rollbar-cli items list --ndjson --limit 20
-
-# page, time, and sort filtering (repeat --level)
-rollbar-cli items list --page 2 --pages 3 --level error --level critical --last 24h --sort counter_desc --limit 25
-
-# watch the list during incident triage
-rollbar-cli items watch --status active --environment production --interval 30s --count 10
-```
+## Shell completion
 
 ```bash
-# get a single item by numeric item ID
-rollbar-cli items get 275123456
-# or
-rollbar-cli items get --id 275123456
-
-# get a single item by UUID
-rollbar-cli items get 01234567-89ab-cdef-0123-456789abcdef
-# or
-rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef
-
-# get item JSON (stable schema)
-rollbar-cli items get --id 275123456 --json
-
-# get item + instance details with payload shaping
-rollbar-cli items get --id 275123456 --instances --payload summary --payload-section request
-
-# get item + instances JSON payloads
-rollbar-cli items get --uuid 01234567-89ab-cdef-0123-456789abcdef --instances --json
-```
-
-```bash
-# common task verbs
-rollbar-cli items resolve --id 275123456 --resolved-in-version aabbcc1
-rollbar-cli items mute --id 275123456
-rollbar-cli items assign --id 275123456 --assigned-user-id 321
-rollbar-cli items snooze --id 275123456 --duration 1h
-
-# update status + resolved version
-rollbar-cli items update --id 275123456 --status resolved --resolved-in-version aabbcc1
-
-# update by UUID and set level/title
-rollbar-cli items update 01234567-89ab-cdef-0123-456789abcdef --level error --title "Checkout failure"
-
-# clear assignment and set snooze
-rollbar-cli items update --id 275123456 --clear-assigned-user --snooze-enabled true --snooze-expiration-seconds 3600
-
-# update item JSON
-rollbar-cli items update --id 275123456 --status active --json
-```
-
-### Occurrences
-
-```bash
-# list occurrences for an item
-rollbar-cli occurrences list --item-id 275123456
-# or
-rollbar-cli occurrences list 275123456
-
-# list occurrences JSON payload
-rollbar-cli occurrences list --item-uuid 01234567-89ab-cdef-0123-456789abcdef --json
-
-# list occurrences in NDJSON
-rollbar-cli occurrences list --item-id 275123456 --ndjson
-
-# get one occurrence by numeric occurrence ID
-rollbar-cli occurrences get --id 501
-# or
-rollbar-cli occurrences get 501
-
-# get one occurrence by UUID
-rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567
-
-# alias spelling also works
-rollbar-cli occurences get --uuid 89abcdef-0123-4567-89ab-cdef01234567
-
-# get one occurrence JSON
-rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
-```
-
-### Users
-
-```bash
-# list account users
-rollbar-cli users list
-
-# stable JSON output
-rollbar-cli users list --json
-
-# get one user by numeric id
-rollbar-cli users get 7
-
-# or stable JSON output for one user
-rollbar-cli users get --id 7 --json
-
-# NDJSON for one user
-rollbar-cli users get --id 7 --ndjson
-
-# raw Rollbar API JSON
-rollbar-cli users list --raw-json
-
-# NDJSON for scripting
-rollbar-cli users list --ndjson
-```
-
-### Deploys
-
-```bash
-# list deploys
-rollbar-cli deploys list
-
-# page through deploy history
-rollbar-cli deploys list --page 2 --limit 20 --json
-
-# get one deploy by id
-rollbar-cli deploys get 12345
-# or
-rollbar-cli deploys get --id 12345 --json
-
-# create a deploy record
-rollbar-cli deploys create \
-  --environment production \
-  --revision aabbcc1 \
-  --status started \
-  --comment "Deploy started from CI" \
-  --local-username ci-bot
-
-# create a deploy and associate a Rollbar username
-rollbar-cli deploys create \
-  --environment production \
-  --revision aabbcc1 \
-  --rollbar-username dave \
-  --json
-
-# update a deploy after completion
-rollbar-cli deploys update 12345 \
-  --status succeeded \
-  --json
-```
-
-### Environments
-
-```bash
-# list all environments across every API page
-rollbar-cli environments list
-
-# stable JSON output
-rollbar-cli environments list --json
-
-# raw Rollbar API page envelopes
-rollbar-cli environments list --raw-json
-
-# NDJSON for scripting
-rollbar-cli environments list --ndjson
-```
-
-## Shell Completion
-
-```bash
-# bash, fish, zsh, and powershell are supported
 rollbar-cli completion bash
 rollbar-cli completion zsh
 rollbar-cli completion fish
 rollbar-cli completion powershell
 ```
 
-Examples:
+## AI skill
+
+This repository includes an optional skill at `.ai/skills/rollbar-cli/SKILL.md` for agent-driven Rollbar investigation
+workflows.
+
+Install it with:
 
 ```bash
-# bash one-off
-source <(rollbar-cli completion bash)
-
-# bash global
-rollbar-cli completion bash > rollbar-cli.bash
-sudo cp rollbar-cli.bash /etc/bash_completion.d/
-
-# zsh one-off
-source <(rollbar-cli completion zsh)
-
-# zsh global
-rollbar-cli completion zsh > _rollbar-cli
-sudo cp _rollbar-cli /usr/local/share/zsh/site-functions/
-
-# zsh user only
-mkdir -p ~/.zsh/completions
-rollbar-cli completion zsh > ~/.zsh/completions/_rollbar-cli
+make install-skill
 ```
 
 ## Development
 
 ```bash
-# run unit tests
 make test
-
-# run unit tests with coverage
 make test-cover
-
-# run vet manually
-go vet ./...
-
-# generate an HTML coverage report
-go test ./... -coverprofile=coverage.out
-go tool cover -html=coverage.out
+make help
 ```
 
-## Release Automation
+Contribution guidelines: [CONTRIBUTING.md](./CONTRIBUTING.md)
 
-Merged pull requests trigger `.github/workflows/release-on-merge.yml`, which now signs and notarizes the macOS release
-archives on `macos-latest`.
+## License
 
-Required GitHub Actions secrets for macOS releases:
-
-- `APPLE_SIGNING_CERTIFICATE_P12_BASE64`: base64-encoded Developer ID Application certificate export
-- `APPLE_SIGNING_CERTIFICATE_PASSWORD`: password for the `.p12`
-- `APPLE_SIGNING_IDENTITY`: full codesigning identity name, for example
-  `Developer ID Application: Example, Inc. (TEAMID)`
-- `APPLE_KEYCHAIN_PASSWORD`: temporary keychain password used during the workflow run
-- `APPLE_NOTARY_KEY_ID`: App Store Connect API key ID for notarization
-- `APPLE_NOTARY_ISSUER_ID`: App Store Connect issuer ID for notarization
-- `APPLE_NOTARY_PRIVATE_KEY_BASE64`: base64-encoded contents of the App Store Connect `.p8` key
-
-macOS assets are published as `.zip` archives instead of `.tar.gz` so they can be submitted to Apple's notarization
-service before release.
-If any of those secrets are missing, the release workflow skips macOS assets and still publishes the Linux and Windows
-artifacts.
-
-## Notes
-
-- Auth uses the `X-Rollbar-Access-Token` header.
-- The default API base URL is `https://api.rollbar.com`.
-- `--json` emits normalized CLI JSON, while `--raw-json` preserves Rollbar API envelopes.
-- `items list` supports client-side `--since`, `--until`, `--last`, `--sort`, `--limit`, and `--pages` filtering.
-- The item TUI shows item IDs and supports `enter` to load occurrences, `o` to toggle details, `y` to copy the item
-  ID, and `r` or `m` to resolve or mute the selected row.
+MIT. See [LICENSE](./LICENSE).
