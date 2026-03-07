@@ -1,0 +1,167 @@
+name: Release On Merge
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.pull_request.base.ref }}
+  cancel-in-progress: false
+
+env:
+  BINARY_NAME: rollbar-cli
+  TAG_PREFIX: v
+
+jobs:
+  prepare:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      merged_sha: ${{ steps.meta.outputs.merged_sha }}
+      tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute tag and attach it to merged commit
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MERGED_SHA}" ]; then
+            echo "Missing merge commit SHA in event payload" >&2
+            exit 1
+          fi
+
+          git fetch --force --tags origin
+
+          tag="$(bash .github/scripts/next_calver.sh "${TAG_PREFIX}")"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${tag}" "${MERGED_SHA}" -m "Release ${tag}"
+          git push origin "${tag}"
+
+          {
+            echo "merged_sha=${MERGED_SHA}"
+            echo "tag=${tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: arm64
+            archive_ext: tar.gz
+          - goos: linux
+            goarch: amd64
+            archive_ext: tar.gz
+          - goos: linux
+            goarch: arm64
+            archive_ext: tar.gz
+          - goos: windows
+            goarch: amd64
+            archive_ext: zip
+          - goos: windows
+            goarch: arm64
+            archive_ext: zip
+
+    steps:
+      - name: Check out merged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.merged_sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          ARCHIVE_EXT: ${{ matrix.archive_ext }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          bin_name="${BINARY_NAME}"
+          if [ "${GOOS}" = "windows" ]; then
+            bin_name="${bin_name}.exe"
+          fi
+
+          version="${TAG#${TAG_PREFIX}}"
+          asset_name="${BINARY_NAME}_${version}_${GOOS}_${GOARCH}"
+          stage_dir="dist/${asset_name}"
+          mkdir -p "${stage_dir}"
+
+          CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" go build -trimpath -ldflags="-s -w" -o "${stage_dir}/${bin_name}" .
+          cp README.md LICENSE "${stage_dir}/"
+
+          if [ "${ARCHIVE_EXT}" = "zip" ]; then
+            (
+              cd dist
+              zip -rq "${asset_name}.zip" "${asset_name}"
+            )
+          else
+            tar -C dist -czf "dist/${asset_name}.tar.gz" "${asset_name}"
+          fi
+
+          rm -rf "${stage_dir}"
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: "*"
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > sha256sums.txt
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --generate-notes \
+            dist/*
