@@ -172,6 +172,77 @@ func TestGetItemByIDAndUUID(t *testing.T) {
 	}
 }
 
+func TestListUsers(t *testing.T) {
+	var gotPath string
+	var gotToken string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotToken = r.Header.Get("X-Rollbar-Access-Token")
+		_, _ = w.Write([]byte(`{"err":0,"result":{"users":[{"id":"7","username":"alice","email":"alice@example.com"},{"user_id":8,"name":"bob","email":"bob@example.com"}]}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.ListUsers(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected list users error: %v", err)
+	}
+
+	if gotPath != "/api/1/users" {
+		t.Fatalf("unexpected users path: %s", gotPath)
+	}
+	if gotToken != "tok" {
+		t.Fatalf("unexpected token header: %q", gotToken)
+	}
+	if len(resp.Users) != 2 {
+		t.Fatalf("expected 2 users, got %d", len(resp.Users))
+	}
+	if resp.Users[0].ID != 7 || resp.Users[0].Username != "alice" || resp.Users[0].Email != "alice@example.com" {
+		t.Fatalf("unexpected first user: %#v", resp.Users[0])
+	}
+	if resp.Users[1].ID != 8 || resp.Users[1].Username != "bob" {
+		t.Fatalf("unexpected fallback user: %#v", resp.Users[1])
+	}
+	if resp.Raw == nil || resp.Raw["err"] == nil {
+		t.Fatalf("expected raw response to be present: %#v", resp.Raw)
+	}
+}
+
+func TestGetUserByID(t *testing.T) {
+	var gotPath string
+	var gotToken string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotToken = r.Header.Get("X-Rollbar-Access-Token")
+		_, _ = w.Write([]byte(`{"err":0,"result":{"id":"7","username":"alice","email":"alice@example.com"}}`))
+	}))
+	defer ts.Close()
+
+	client := NewClient(Config{AccessToken: "tok", BaseURL: ts.URL})
+	resp, err := client.GetUserByID(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("unexpected get user error: %v", err)
+	}
+
+	if gotPath != "/api/1/user/7" {
+		t.Fatalf("unexpected user path: %s", gotPath)
+	}
+	if gotToken != "tok" {
+		t.Fatalf("unexpected token header: %q", gotToken)
+	}
+	if resp.User.ID != 7 || resp.User.Username != "alice" || resp.User.Email != "alice@example.com" {
+		t.Fatalf("unexpected user: %#v", resp.User)
+	}
+	if resp.Raw == nil || resp.Raw["err"] == nil {
+		t.Fatalf("expected raw response to be present: %#v", resp.Raw)
+	}
+
+	if _, err := client.GetUserByID(context.Background(), 0); err == nil {
+		t.Fatalf("expected invalid user id error")
+	}
+}
 func TestListItemInstances(t *testing.T) {
 	var gotPath string
 	var gotQuery url.Values

@@ -12,6 +12,7 @@ workflows.
 - List Rollbar items with environment, level, status, time, sort, and paging filters
 - Fetch a single item by ID or UUID, optionally with associated occurrences
 - List or fetch occurrences for an item
+- List account users
 - Update item status, title, level, assignment, and snooze state
 - Render stable JSON, raw API JSON, NDJSON, or text/TUI output
 - Install an agent skill for Codex, Claude Code, Cursor, Windsurf, and similar tools
@@ -44,6 +45,9 @@ export ROLLBAR_ACCESS_TOKEN=rbac_...
 
 # inspect one item with occurrences
 ./bin/rollbar-cli items get --id 275123456 --instances --json
+
+# list account users
+./bin/rollbar-cli users list
 ```
 
 If you install with `go install` or `make install`, you can run `rollbar-cli ...` directly instead of `./bin/rollbar-cli`.
@@ -77,6 +81,7 @@ make help
 ## Authentication and Config
 
 Provide a Rollbar project token with `read` scope for queries, or `read` and `write` if you want to update items.
+For `users list`, use an account-scoped token that can read account users.
 
 Supported auth/config inputs:
 
@@ -210,6 +215,31 @@ rollbar-cli occurences get --uuid 89abcdef-0123-4567-89ab-cdef01234567
 
 # get one occurrence JSON
 rollbar-cli occurrences get --uuid 89abcdef-0123-4567-89ab-cdef01234567 --json
+```
+
+### Users
+
+```bash
+# list account users
+rollbar-cli users list
+
+# stable JSON output
+rollbar-cli users list --json
+
+# get one user by numeric id
+rollbar-cli users get 7
+
+# or stable JSON output for one user
+rollbar-cli users get --id 7 --json
+
+# NDJSON for one user
+rollbar-cli users get --id 7 --ndjson
+
+# raw Rollbar API JSON
+rollbar-cli users list --raw-json
+
+# NDJSON for scripting
+rollbar-cli users list --ndjson
 ```
 
 ## Shell Completion
