@@ -67,6 +67,9 @@ If you install with `go install` or `make install`, you can run `rollbar-cli ...
 # build binary into bin/
 make build
 
+# build common macOS, Linux, and Windows binaries into bin/
+make build-cross
+
 # install skill into common AI tool skill directories
 make install-skill
 
