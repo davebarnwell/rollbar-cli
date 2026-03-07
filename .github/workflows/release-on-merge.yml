@@ -29,6 +29,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Compute tag and attach it to merged commit
         id: meta
@@ -44,13 +45,52 @@ jobs:
           fi
 
           git fetch --force --tags origin
+          git fetch --no-tags origin "${MERGED_SHA}"
 
-          tag="$(bash .github/scripts/next_calver.sh "${TAG_PREFIX}")"
+          if ! git rev-parse --verify "${MERGED_SHA}^{commit}" >/dev/null 2>&1; then
+            echo "Merged commit ${MERGED_SHA} is not available locally" >&2
+            exit 1
+          fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${tag}" "${MERGED_SHA}" -m "Release ${tag}"
-          git push origin "${tag}"
+          tag="$(git tag --points-at "${MERGED_SHA}" --list "${TAG_PREFIX}*" | sort -V | tail -n 1)"
+
+          if [ -n "${tag}" ]; then
+            echo "Reusing existing tag ${tag} for ${MERGED_SHA}"
+          else
+            tag="$(bash .github/scripts/next_calver.sh "${TAG_PREFIX}")"
+
+            while git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; do
+              existing_sha="$(git rev-list -n 1 "${tag}")"
+              if [ "${existing_sha}" = "${MERGED_SHA}" ]; then
+                echo "Tag ${tag} already points at ${MERGED_SHA}, reusing it"
+                break
+              fi
+
+              echo "Tag ${tag} already exists at ${existing_sha}, fetching tags and retrying" >&2
+              git fetch --force --tags origin
+
+              tag="$(git tag --points-at "${MERGED_SHA}" --list "${TAG_PREFIX}*" | sort -V | tail -n 1)"
+              if [ -n "${tag}" ]; then
+                echo "Found existing tag ${tag} for ${MERGED_SHA} after refetch"
+                break
+              fi
+
+              tag="$(bash .github/scripts/next_calver.sh "${TAG_PREFIX}")"
+            done
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; then
+            existing_sha="$(git rev-list -n 1 "${tag}")"
+            if [ "${existing_sha}" != "${MERGED_SHA}" ]; then
+              echo "Resolved tag ${tag} points to ${existing_sha}, expected ${MERGED_SHA}" >&2
+              exit 1
+            fi
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${tag}" "${MERGED_SHA}" -m "Release ${tag}"
+            git push origin "refs/tags/${tag}"
+          fi
 
           {
             echo "merged_sha=${MERGED_SHA}"
@@ -153,7 +193,9 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sha256sum * > sha256sums.txt
+          find . -maxdepth 1 -type f ! -name 'sha256sums.txt' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > sha256sums.txt
 
       - name: Create GitHub release
         env:
@@ -162,7 +204,11 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release create "${TAG}" \
-            --title "${TAG}" \
-            --generate-notes \
-            dist/*
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" dist/* --clobber
+          else
+            gh release create "${TAG}" \
+              --title "${TAG}" \
+              --generate-notes \
+              dist/*
+          fi
