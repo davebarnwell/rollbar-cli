@@ -48,6 +48,15 @@ make build
 make install-skill
 ```
 
+### Install both the CLI and the AI skill
+
+```bash
+make install-all
+```
+
+`make install` only installs the `rollbar-cli` binary with `go install`. `make install-skill` installs only the AI
+skill. Use `make install-all` if you want both.
+
 ## Quick start
 
 ```bash
