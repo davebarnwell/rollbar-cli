@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rollbar CLI"
+  short_description: "Trace Rollbar errors into tested fixes"
+  default_prompt: "Use $rollbar-cli to investigate recent production errors, classify the evidence, and implement a focused regression-tested fix when requested."
